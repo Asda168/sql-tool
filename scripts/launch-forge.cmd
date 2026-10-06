@@ -1,5 +1,5 @@
 @echo off
-rem Launches MySQL Forge Studio (web build) locally and opens it in your browser.
+rem Launches MySQL Forge Studio locally in its own app window (Edge app mode: no tabs, no address bar).
 rem Interim launcher: used until the native installer (Tauri) can be built.
 setlocal
 set "ROOT=%~dp0.."
@@ -17,5 +17,5 @@ if not exist "dist\index.html" (
 rem Start the static server minimised, then open the IDE.
 start "MySQL Forge Studio server" /min cmd /c "npx vite preview --port 4173 --strictPort"
 timeout /t 3 /nobreak >nul
-start "" "http://localhost:4173/app"
+start "" msedge --app=http://localhost:4173/app --window-size=1440,900 --user-data-dir="%LOCALAPPDATA%\MySQLForgeStudio\profile"
 endlocal
