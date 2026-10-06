@@ -1,0 +1,73 @@
+name: Build desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+          - os: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - os: macos-13
+            args: '--target x86_64-apple-darwin'
+          - os: ubuntu-22.04
+            args: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin' || matrix.os == 'macos-13' && 'x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Linux system packages
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libsecret-1-dev patchelf
+
+      - name: Install JS dependencies
+        run: |
+          npm ci --prefix frontend
+          npm ci --prefix desktop
+
+      - name: Build installers
+        working-directory: desktop
+        run: npx tauri build ${{ matrix.args }} --bundles ${{ matrix.os == 'windows-latest' && 'nsis' || matrix.os == 'ubuntu-22.04' && 'deb,rpm,appimage' || 'dmg' }}
+
+      - name: Checksums (SHA-256)
+        shell: bash
+        working-directory: desktop/src-tauri/target
+        run: |
+          find . -path '*bundle*' -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) -print0 \
+            | xargs -0 -I{} sh -c 'shasum -a 256 "{}" | tee -a "$GITHUB_WORKSPACE/SHA256SUMS-${{ matrix.os }}.txt"'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            desktop/src-tauri/target/**/bundle/**/*.exe
+            desktop/src-tauri/target/**/bundle/**/*.dmg
+            desktop/src-tauri/target/**/bundle/**/*.deb
+            desktop/src-tauri/target/**/bundle/**/*.rpm
+            desktop/src-tauri/target/**/bundle/**/*.AppImage
+            SHA256SUMS-*.txt

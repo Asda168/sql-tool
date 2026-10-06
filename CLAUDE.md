@@ -45,6 +45,7 @@ Before finishing a change: `npx tsc --noEmit`, `npm test`, `python manage.py tes
 - Windows dev: use Git Bash/PowerShell; avoid committing `node_modules`, `.venv`, `target/` (see `.gitignore`).
 
 ## Known limitations / honest status
+- The Rust layer has NOT been compiled yet on the dev machine (Windows App Control blocked cargo build scripts, os error 4551). Treat `desktop/src-tauri` as unverified until `cargo check` passes locally or in the CI workflow.
 - Rust code is written to compile on stable but check `cargo check` output first if the build fails; installers are unsigned.
 - Release rows from `seed_releases` are placeholders (zero checksums). Replace with real artifacts.
 - Query cancel aborts the client task; it does not issue a server-side KILL.
