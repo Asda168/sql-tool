@@ -75,8 +75,11 @@ export function useContextMenu() {
   }
 }
 
-export function useSplitter(initial: number, min: number, max: number, dir: 'x' | 'y', invert = false) {
-  const [size, setSize] = useState(initial)
+export function useSplitter(initial: number, min: number, max: number, dir: 'x' | 'y', invert = false, key?: string) {
+  const [size, setSize] = useState(() => {
+    try { const v = key ? Number(localStorage.getItem('forge.size.' + key)) : 0; return v >= min && v <= max ? v : initial } catch { return initial }
+  })
+  useEffect(() => { if (key) try { localStorage.setItem('forge.size.' + key, String(size)) } catch { /* storage unavailable */ } }, [key, size])
   const start = (e: React.MouseEvent) => {
     e.preventDefault()
     const s0 = dir === 'x' ? e.clientX : e.clientY

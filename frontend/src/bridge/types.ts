@@ -100,8 +100,20 @@ export interface GitBridge {
   init(cwd: string): Promise<void>
 }
 
+export interface StackService { id: string; name: string; engine: 'mysql' | 'mariadb'; running: boolean; port: number; version?: string; canStart: boolean }
+export interface Stack { id: string; name: string; root: string; managerRunning: boolean; services: StackService[] }
+
+/** Only the local host service provides this: connections queued by add-connection.mjs. */
+export interface HostBridge {
+  seeds(): Promise<ConnectionConfig[]>
+  ackSeeds(ids: string[]): Promise<void>
+  stacks(): Promise<Stack[]>
+  startService(id: string): Promise<{ port: number; alreadyRunning: boolean }>
+}
+
 export interface Bridge {
-  kind: 'tauri' | 'demo'
+  kind: 'tauri' | 'host' | 'demo'
+  host?: HostBridge
   db: DbBridge
   secrets: SecretsBridge
   fs: FsBridge

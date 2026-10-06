@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { bridge, type ConnectionConfig, type ProjectInfo, type QueryResult } from '../bridge'
 import { ENGINES, type EngineId } from '../lib/engines'
-import { Introspector } from '../lib/introspect'
+import { Introspector, type SchemaInfo } from '../lib/introspect'
 import { analyse, isWrite, statementAt } from '../lib/sqlSafety'
+import { noteUsage } from '../lib/usage'
 
 // ---------- settings ----------
 export interface Settings {
@@ -39,10 +40,10 @@ export interface TabResult { running: boolean; result?: QueryResult; error?: str
 export type Dialog =
   | { type: 'confirm'; title: string; body: string; detail?: string[]; confirmLabel: string; danger: boolean; banner?: string; resolve: (ok: boolean) => void }
   | { type: 'prompt'; title: string; label: string; placeholder?: string; initial?: string; confirmLabel: string; resolve: (v: string | null) => void }
-  | { type: 'connection'; editId?: string; engine?: EngineId }
+  | { type: 'connection'; editId?: string; engine?: EngineId; initial?: Partial<ConnectionConfig> }
   | { type: 'clone' }
   | { type: 'about' }
-  | { type: 'palette'; mode: 'commands' | 'files' }
+  | { type: 'palette'; mode: 'commands' | 'files' | 'tables' }
   | { type: 'save-query'; sql: string }
 
 const load = <T,>(k: string, d: T): T => {
@@ -54,7 +55,10 @@ const loadArr = <T,>(k: string): T[] => {
 const save = (k: string, v: unknown) => { try { localStorage.setItem('forge.' + k, JSON.stringify(v)) } catch { /* storage unavailable */ } }
 export const uid = () => Math.random().toString(36).slice(2, 10)
 
-export type LeftPanel = 'files' | 'git' | 'history' | 'search'
+export interface Layout { sidebar: 'left' | 'right'; terminal: 'bottom' | 'right'; results: 'bottom' | 'right' }
+export const DEFAULT_LAYOUT: Layout = { sidebar: 'left', terminal: 'bottom', results: 'bottom' }
+
+export type LeftPanel = 'database' | 'projects' | 'git' | 'search' | 'history'
 
 interface State {
   settings: Settings
@@ -63,7 +67,10 @@ interface State {
 
   connections: ConnectionConfig[]
   sessions: Record<string, Session>
-  schemaCache: Record<string, Record<string, string[]>> // connId -> table -> columns (flattened across the active namespace)
+  schemaCache: Record<string, Record<string, SchemaInfo>> // connId -> database/schema -> tables, columns, foreign keys (autocomplete + search)
+  namespaces: Record<string, string[]> // connId -> database/schema names
+  loadNs: (connId: string, ns: string, force?: boolean) => Promise<SchemaInfo | undefined>
+  selectDatabase: (connId: string, ns: string, forceTab?: boolean) => Promise<void>
   activeConnId?: string
   saveConnection: (c: ConnectionConfig, password?: string) => Promise<void>
   deleteConnection: (id: string) => Promise<void>
@@ -113,7 +120,7 @@ interface State {
   showTerminal: boolean
   terminalMax: boolean
   setLeftPanel: (p: LeftPanel) => void
-  toggle: (k: 'showLeft' | 'showRight' | 'showTerminal' | 'terminalMax') => void
+  toggle: (k: 'showLeft' | 'showRight' | 'showTerminal' | 'terminalMax' | 'showResults') => void
 
   toasts: Toast[]
   toast: (kind: Toast['kind'], text: string) => void
@@ -125,13 +132,27 @@ interface State {
   finishFirstRun: () => void
   gitVersion: number
   bumpGit: () => void
-  cursor: { line: number; col: number }
+  lastUsed: Record<string, string>
+  showResults: boolean
+  connList: boolean
+  settingsCat: string
+  setConnList: (b: boolean) => void
+  layout: Layout
+  setLayout: (p: Partial<Layout>) => void
+  focusMode: boolean
+  toggleFocusMode: () => void
+  selectedNs: Record<string, string>
+  setNs: (connId: string, ns: string) => void
+  switchConnection: (id: string) => Promise<void>
+  selectedEntry?: { path: string; name: string; isDir: boolean }
 }
 
 const sysDark = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
 const resolve = (t: Settings['theme']) => (t === 'system' ? (sysDark() ? 'dark' : 'light') : t)
 
 let toastSeq = 0
+let focusBackup = { showLeft: true, showTerminal: false }
+const connecting = new Set<string>() // guards against two simultaneous connects (e.g. auto-connect + a click)
 const running = new Map<string, string>() // tabId -> sessionId, for cancel
 
 export const useApp = create<State>((set, get) => ({
@@ -146,6 +167,7 @@ export const useApp = create<State>((set, get) => ({
   connections: loadArr<ConnectionConfig>('connections'),
   sessions: {},
   schemaCache: {},
+  namespaces: {},
   activeConnId: undefined,
   setActiveConn: (id) => set({ activeConnId: id }),
 
@@ -167,14 +189,19 @@ export const useApp = create<State>((set, get) => ({
   },
   connect: async (id, password) => {
     const cfg = get().connections.find((c) => c.id === id)
-    if (!cfg) return
+    if (!cfg || get().sessions[id] || connecting.has(id)) return
+    connecting.add(id)
+    try {
     const pw = password ?? (await bridge().secrets.get(`conn:${id}`)) ?? ''
     const sessionId = await bridge().db.connect({ ...cfg, password: pw })
     // The demo bridge runs SQLite regardless of the saved engine, so introspection must speak SQLite.
     const engine: EngineId = bridge().kind === 'demo' ? 'sqlite' : cfg.engine
-    set((s) => ({ sessions: { ...s.sessions, [id]: { sessionId, engine } }, activeConnId: id }))
+    const lastUsed = { ...get().lastUsed, [id]: new Date().toISOString() }
+    save('lastUsed', lastUsed)
+    set((s) => ({ sessions: { ...s.sessions, [id]: { sessionId, engine } }, activeConnId: id, lastUsed, connList: false, leftPanel: 'database', showLeft: true }))
     get().toast('success', `Connected to ${cfg.name}`)
     void get().refreshSchema(id)
+    } finally { connecting.delete(id) }
   },
   disconnect: async (id) => {
     const s = get().sessions[id]
@@ -186,17 +213,47 @@ export const useApp = create<State>((set, get) => ({
       return { sessions }
     })
   },
+  /** Reload names + the active database's schema in the background (metadata only, no row data). */
   refreshSchema: async (id, ns) => {
     const s = get().sessions[id]
     const cfg = get().connections.find((c) => c.id === id)
     if (!s || !cfg) return
     try {
       const intro = new Introspector(bridge(), s.sessionId, s.engine)
-      const target = ns ?? (s.engine === 'sqlite' ? 'main' : cfg.database || (await intro.namespaces()).find((n) => !ENGINES[s.engine].systemDatabases.includes(n)) || '')
-      if (!target) return
-      const cols = await intro.allColumns(target) // background, metadata only
-      set((st) => ({ schemaCache: { ...st.schemaCache, [id]: cols } }))
+      const all = await intro.namespaces()
+      set((st) => ({ namespaces: { ...st.namespaces, [id]: all } }))
+      const user = all.filter((n) => !ENGINES[s.engine].systemDatabases.includes(n))
+      const target = ns ?? get().selectedNs[id] ?? (s.engine === 'sqlite' ? 'main' : cfg.database || (user.length === 1 ? user[0] : ''))
+      if (target) {
+        if (!get().selectedNs[id]) get().setNs(id, target) // a single/default database is selected automatically
+        await get().loadNs(id, target, true)
+      }
     } catch { /* autocomplete simply stays empty */ }
+  },
+  loadNs: async (id, ns, force = false) => {
+    const s = get().sessions[id]
+    if (!s) return undefined
+    const have = get().schemaCache[id]?.[ns]
+    if (have && !force) return have
+    try {
+      const info = await new Introspector(bridge(), s.sessionId, s.engine).fullSchema(ns)
+      set((st) => ({ schemaCache: { ...st.schemaCache, [id]: { ...st.schemaCache[id], [ns]: info } } }))
+      return info
+    } catch { return undefined }
+  },
+  /** Make a database the active one: queries run in it, autocomplete and search use it, and a query tab is ready to type in. */
+  selectDatabase: async (id, ns, forceTab = true) => {
+    get().setNs(id, ns)
+    set({ activeConnId: id })
+    void get().loadNs(id, ns)
+    const active = get().tabs.find((t) => t.id === get().activeTabId)
+    if (active?.kind === 'sql') { get().updateTab(active.id, { connId: id }); return }
+    // not in a query tab: open one (always when asked, otherwise only if there is no query tab at all)
+    if (forceTab || !get().tabs.some((t) => t.kind === 'sql')) {
+      const tab = get().newSqlTab('', 'query.sql')
+      get().updateTab(tab, { connId: id })
+      get().toast('info', `Using ${ns}. Start typing SQL.`)
+    }
   },
 
   projectPath: undefined,
@@ -206,7 +263,7 @@ export const useApp = create<State>((set, get) => ({
     const info = await bridge().fs.detectProject(path)
     const recent = [path, ...get().recentProjects.filter((p) => p !== path)].slice(0, 8)
     save('recent', recent)
-    set({ projectPath: path, projectInfo: info, recentProjects: recent, showLeft: true, leftPanel: 'files', fsVersion: get().fsVersion + 1 })
+    set({ projectPath: path, projectInfo: info, recentProjects: recent, showLeft: true, leftPanel: 'projects', fsVersion: get().fsVersion + 1 })
     get().toast('success', `Opened ${path.split(/[\\/]/).pop()} (${info.label})`)
   },
   fsVersion: 0,
@@ -335,13 +392,14 @@ export const useApp = create<State>((set, get) => ({
       let totalMs = 0
       let totalAffected = 0
       for (const part of parts) {
-        result = await bridge().db.query(sess.sessionId, part, { maxRows: st.settings.rowLimit })
+        result = await bridge().db.query(sess.sessionId, part, { maxRows: st.settings.rowLimit, database: get().selectedNs[connId] })
         totalMs += result.elapsedMs
         totalAffected += result.affected
       }
       if (parts.length > 1) result = { ...result, elapsedMs: totalMs, affected: result.columns.length ? result.affected : totalAffected }
       setRes({ result, error: undefined, sql, ranAt: new Date().toISOString(), connId })
       record('success', result.elapsedMs || Date.now() - t0)
+      { const known = new Set(Object.values(get().schemaCache[connId] ?? {}).flatMap((i) => Object.keys(i.tables).map((t) => t.toLowerCase()))); noteUsage(connId, sql, (w) => known.has(w.toLowerCase())) }
       if (a.statements.some((s) => ['CREATE', 'DROP', 'ALTER'].includes(s.kind))) void get().refreshSchema(connId)
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e)
@@ -357,7 +415,7 @@ export const useApp = create<State>((set, get) => ({
     if (sid) await bridge().db.cancel(sid).catch(() => {})
   },
 
-  leftPanel: 'files',
+  leftPanel: 'database',
   showLeft: true,
   showRight: true,
   showTerminal: false,
@@ -379,5 +437,28 @@ export const useApp = create<State>((set, get) => ({
   finishFirstRun: () => { try { localStorage.setItem('forge.firstRun', '1') } catch { /* ignore */ } set({ firstRunDone: true }) },
   gitVersion: 0,
   bumpGit: () => set((s) => ({ gitVersion: s.gitVersion + 1 })),
-  cursor: { line: 1, col: 1 },
+  lastUsed: load<Record<string, string>>('lastUsed', {}),
+  showResults: true,
+  connList: false,
+  settingsCat: 'Editor',
+  setConnList: (b) => set({ connList: b }),
+  layout: load<Layout>('layout', DEFAULT_LAYOUT),
+  setLayout: (patch) => { const layout = { ...get().layout, ...patch }; save('layout', layout); set({ layout }) },
+  focusMode: false,
+  /** Hide the sidebar and terminal for a distraction-free editor; toggling again restores them. */
+  toggleFocusMode: () => {
+    if (get().focusMode) { set({ focusMode: false, showLeft: focusBackup.showLeft, showTerminal: focusBackup.showTerminal }); return }
+    focusBackup = { showLeft: get().showLeft, showTerminal: get().showTerminal }
+    set({ focusMode: true, showLeft: false, showTerminal: false, terminalMax: false })
+  },
+  selectedNs: load<Record<string, string>>('selectedNs', {}),
+  setNs: (connId, ns) => { const selectedNs = { ...get().selectedNs, [connId]: ns }; save('selectedNs', selectedNs); set({ selectedNs }) },
+  /** Footer switcher: make a saved connection the active one (connecting it if needed) and point the current SQL tab at it. */
+  switchConnection: async (id) => {
+    if (!get().sessions[id]) await get().connect(id)
+    if (!get().sessions[id]) return
+    const tab = get().tabs.find((t) => t.id === get().activeTabId)
+    set({ activeConnId: id, connList: false })
+    if (tab && tab.kind === 'sql') get().updateTab(tab.id, { connId: id })
+  },
 }))

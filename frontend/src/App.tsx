@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './pages/website/Layout'
-import Home, { EditorPage, Features, MysqlTools } from './pages/website/Home'
+import Home from './pages/website/Home'
 import Download from './pages/website/Download'
 import Docs from './pages/website/Docs'
 import { Changelog, Github, Privacy, Releases, Terms } from './pages/website/Misc'
@@ -14,9 +14,9 @@ export default function App() {
       <Route path="/app/*" element={<Suspense fallback={<div className="p-6 text-sm text-muted">Loading MySQL Forge Studio…</div>}><IdeShell /></Suspense>} />
       <Route element={<Layout />}>
         <Route index element={<Home />} />
-        <Route path="features" element={<Features />} />
-        <Route path="mysql" element={<MysqlTools />} />
-        <Route path="editor" element={<EditorPage />} />
+        <Route path="features" element={<Navigate to="/#features" replace />} />
+        <Route path="mysql" element={<Navigate to="/#engines" replace />} />
+        <Route path="editor" element={<Navigate to="/#snippets" replace />} />
         <Route path="download" element={<Download />} />
         <Route path="docs" element={<Docs />} />
         <Route path="changelog" element={<Changelog />} />

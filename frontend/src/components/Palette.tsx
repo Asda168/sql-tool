@@ -5,6 +5,7 @@ import { useApp } from '../store/app'
 import { useTerms } from '../terminal/termStore'
 import { Modal } from './ui'
 import { formatSql } from '../lib/format'
+import { fuzzyScore } from '../lib/sqlContext'
 import { joinPath } from './FileExplorer'
 
 interface Cmd { id: string; label: string; hint?: string; run: () => void | Promise<void> }
@@ -14,6 +15,11 @@ export function useCommands(): Cmd[] {
   const git = (op: 'pull' | 'push', label: string): Cmd => ({ id: `git-${op}`, label, run: async () => { const s = st(); if (!s.projectPath) return s.toast('error', 'Open a project first'); try { s.toast('success', (await bridge().git.run(s.projectPath, op)).slice(0, 160) || `${label} done`); s.bumpGit() } catch (e) { s.toast('error', (e as Error).message) } } })
   return [
     { id: 'new-sql', label: 'New SQL Query', run: () => void st().newSqlTab('') },
+    { id: 'sidebar-side', label: 'View: Toggle Sidebar Position (Left / Right)', run: () => st().setLayout({ sidebar: st().layout.sidebar === 'left' ? 'right' : 'left' }) },
+    { id: 'terminal-side', label: 'View: Toggle Terminal Position (Bottom / Right)', run: () => st().setLayout({ terminal: st().layout.terminal === 'bottom' ? 'right' : 'bottom' }) },
+    { id: 'results-side', label: 'View: Toggle Results Position (Below / Beside Editor)', run: () => st().setLayout({ results: st().layout.results === 'bottom' ? 'right' : 'bottom' }) },
+    { id: 'focus', label: 'View: Focus Mode (editor only)', run: () => st().toggleFocusMode() },
+    { id: 'go-table', label: 'Go to Table…', hint: `${mod()}+E`, run: () => st().setDialog({ type: 'palette', mode: 'tables' }) },
     { id: 'connect', label: 'Connect Database', run: () => st().setDialog({ type: 'connection' }) },
     { id: 'new-file', label: 'New File', run: async () => { const s = st(); if (!s.projectPath) return s.toast('error', 'Open a project first'); const n = await s.prompt({ title: 'New File', label: 'File name' }); if (n) { await bridge().fs.createFile(joinPath(s.projectPath, n)).catch((e) => s.toast('error', e.message)); s.bumpFs(); void s.openFile(joinPath(s.projectPath, n)) } } },
     { id: 'new-folder', label: 'New Folder', run: async () => { const s = st(); if (!s.projectPath) return s.toast('error', 'Open a project first'); const n = await s.prompt({ title: 'New Folder', label: 'Folder name' }); if (n) { await bridge().fs.createDir(joinPath(s.projectPath, n)).catch((e) => s.toast('error', e.message)); s.bumpFs() } } },
@@ -34,7 +40,7 @@ export function useCommands(): Cmd[] {
   ]
 }
 
-export default function Palette({ mode }: { mode: 'commands' | 'files' }) {
+export default function Palette({ mode }: { mode: 'commands' | 'files' | 'tables' }) {
   const st = useApp()
   const cmds = useCommands()
   const [q, setQ] = useState('')
@@ -56,20 +62,35 @@ export default function Palette({ mode }: { mode: 'commands' | 'files' }) {
     return () => { live = false }
   }, [mode, st.projectPath])
   const items = useMemo(() => {
-    const n = q.toLowerCase()
-    const score = (s: string) => (s.toLowerCase().includes(n) ? s.toLowerCase().indexOf(n) : -1)
-    return (mode === 'files' ? files.map((f) => ({ id: f.path, label: f.name, hint: f.path.replace(st.projectPath ?? '', ''), run: () => st.openFile(f.path) })) : cmds)
-      .filter((c) => !n || score(c.label) >= 0 || ('hint' in c && c.hint && score(c.hint) >= 0)).slice(0, 50)
-  }, [q, files, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+    type Row = { id: string; label: string; hint?: string; run: () => void | Promise<void>; kind?: string }
+    let rows: Row[]
+    if (mode === 'files') rows = files.map((f) => ({ id: f.path, label: f.name, hint: f.path.replace(st.projectPath ?? '', ''), run: () => st.openFile(f.path) }))
+    else if (mode === 'tables') {
+      const id = st.activeConnId
+      const spaces = (id && st.schemaCache[id]) || {}
+      const sel = id ? st.selectedNs[id] : undefined
+      rows = Object.entries(spaces).flatMap(([ns, info]) => Object.entries(info.tables).map(([t, v]) => ({
+        id: `${ns}.${t}`, label: t, kind: v.kind, hint: `${v.kind} · ${v.columns.length} columns · ${ns}`,
+        run: () => { if (id) st.openTab({ id: `tbl:${id}:${ns}:${t}`, kind: 'table', title: t, connId: id, ns, table: t }) },
+        boost: ns === sel ? 50 : 0,
+      } as Row & { boost: number })))
+    } else rows = cmds
+    // match first, boost afterwards: a non-matching row must never be rescued by its boost
+    const scored = rows
+      .map((r) => ({ r, base: Math.max(fuzzyScore(q, r.label), r.hint && q ? fuzzyScore(q, r.hint) - 300 : -1) }))
+      .filter((x) => x.base >= 0 || !q)
+      .map((x) => ({ r: x.r, sc: x.base + ((x.r as { boost?: number }).boost ?? 0) }))
+    return (q ? scored.sort((a, b) => b.sc - a.sc) : scored).slice(0, 60).map((x) => x.r)
+  }, [q, files, mode, st.activeConnId, st.schemaCache]) // eslint-disable-line react-hooks/exhaustive-deps
   const run = (c: { run: () => void | Promise<void> }) => { st.setDialog(null); void c.run() }
   return (
-    <Modal title={mode === 'files' ? 'Quick Open' : 'Command Palette'} onClose={() => st.setDialog(null)}>
+    <Modal title={mode === 'files' ? 'Quick Open' : mode === 'tables' ? 'Go to Table' : 'Command Palette'} onClose={() => st.setDialog(null)}>
       <div className="p-2">
-        <input ref={input} autoFocus aria-label="Search" className="input" placeholder={mode === 'files' ? 'Search files by name…' : 'Type a command…'} value={q} onChange={(e) => { setQ(e.target.value); setSel(0) }}
+        <input ref={input} autoFocus aria-label="Search" className="input" placeholder={mode === 'files' ? 'Search files by name…' : mode === 'tables' ? 'Search tables…' : 'Type a command…'} value={q} onChange={(e) => { setQ(e.target.value); setSel(0) }}
           onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)) } else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(0, s - 1)) } else if (e.key === 'Enter' && items[sel]) run(items[sel]) }} />
         <div role="listbox" className="mt-2 max-h-80 overflow-auto">
           {items.map((c, i) => <button key={c.id} role="option" aria-selected={i === sel} className={`flex w-full items-center justify-between rounded px-3 py-1.5 text-left text-xs ${i === sel ? 'bg-accent/20' : 'hover:bg-raised'}`} onMouseEnter={() => setSel(i)} onClick={() => run(c)}><span>{c.label}</span>{'hint' in c && c.hint && <span className="code ml-3 truncate text-[10px] text-muted">{c.hint}</span>}</button>)}
-          {!items.length && <div className="p-3 text-center text-xs text-muted">{mode === 'files' && !st.projectPath ? 'Open a project first.' : 'No matches.'}</div>}
+          {!items.length && <div className="p-3 text-center text-xs text-muted">{mode === 'files' && !st.projectPath ? 'Open a project first.' : mode === 'tables' && !st.activeConnId ? 'Connect to a database first.' : 'No matches.'}</div>}
         </div>
       </div>
     </Modal>

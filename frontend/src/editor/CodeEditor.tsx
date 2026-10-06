@@ -1,7 +1,8 @@
 import Editor, { type OnMount } from '@monaco-editor/react'
 import './monaco'
-import { FORGE_DARK, FORGE_LIGHT } from './monaco'
+import { FORGE_DARK, FORGE_LIGHT, setActiveEditor } from './monaco'
 import { useApp } from '../store/app'
+import { useCursor } from '../store/cursor'
 
 const LANGS: Record<string, string> = {
   sql: 'sql', php: 'php', py: 'python', js: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript', vue: 'html',
@@ -21,7 +22,7 @@ export default function CodeEditor({ path, value, language, onChange, onMount, r
     }}>
       <Editor
         path={path} language={language} value={value} theme={theme === 'dark' ? FORGE_DARK : FORGE_LIGHT}
-        onChange={(v) => onChange(v ?? '')} onMount={(e, m) => { e.onDidChangeCursorPosition((c) => useApp.setState({ cursor: { line: c.position.lineNumber, col: c.position.column } })); onMount?.(e, m) }}
+        onChange={(v) => onChange(v ?? '')} onMount={(e, m) => { setActiveEditor(e); e.onDidFocusEditorText(() => setActiveEditor(e)); e.onDidChangeCursorPosition((c) => useCursor.setState({ line: c.position.lineNumber, col: c.position.column })); onMount?.(e, m) }}
         options={{
           readOnly, fontFamily: `"${s.fontFamily}", monospace`, fontSize: s.fontSize, fontWeight: String(s.fontWeight),
           lineHeight: Math.round(s.fontSize * s.lineHeight), letterSpacing: s.letterSpacing, fontLigatures: s.ligatures,

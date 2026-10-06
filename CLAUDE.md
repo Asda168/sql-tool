@@ -36,6 +36,13 @@ Before finishing a change: `npx tsc --noEmit`, `npm test`, `python manage.py tes
 - `backend/` apps: accounts, projects, repositories, database, queries, releases, downloads. Per-user data uses `accounts.permissions.OwnedModelViewSet`.
 
 ## Conventions
+- **Scrolling:** virtualized lists use `lib/useScrollWindow.ts` (synchronous window update, row buckets, large overscan). Do NOT defer the window update with requestAnimationFrame: it shows blank rows during fast wheel scrolling. Scroll areas get `overscroll-behavior: contain` + `overflow-anchor: none` (global CSS); `html.ide` is overflow-hidden; never use `scrollIntoView` (it scrolls every ancestor), scroll the list's own container.
+- **Shortcuts:** match keys with `lib/shortcut.ts` (`shortcutKey`), never `event.key` alone: it breaks on non-Latin/AZERTY layouts. Ctrl+Backquote is matched by position. The terminal panel stays mounted when hidden so shells survive; use `toggleTerminal()`.
+- Inputs: use the `.input` class or `components/SearchBox.tsx`; both show ONE focus indicator (cyan border + soft ring). Inputs inside a styled wrapper get `.bare-input` so the global `:focus-visible` outline does not add a second border. Hover styles must not override focus styles (`[&:not(:focus-within)]:hover:`).
+- Editing data: `lib/dataEdit.ts` (`buildStatements`, tested) is used by the table Data tab and by query results (`database/QueryResultGrid.tsx`, eligibility via `lib/sqlTable.ts`). Edit mode is opt-in and always confirmed; production adds a banner. There are no paid tiers or license gates.
+- Layout: `store.layout` (sidebar left/right, terminal bottom/right, results below/beside) + `toggleFocusMode`, exposed in View menu and the command palette.
+- **Performance rules (UI):** never render long lists as plain DOM (`database/SchemaTree.tsx` is a virtualized, delegated-event tree: ~40 rows in the DOM for 700+ tables). Never call `useApp()` without a selector inside list rows or big components (it re-renders on every store change); use selectors / `useShallow`. High-frequency state (the cursor) lives in its own store (`store/cursor.ts`). Throttle scroll handlers with `requestAnimationFrame`.
+- The explorer shows only the selected database (`store.selectedNs`); `DatabaseSwitch` in `database/ExplorerPanel.tsx` and the footer chip change it.
 - Adding a bridge capability: update `types.ts`, `tauri.ts`, `demo.ts`, the Rust command and `lib.rs` handler list together.
 - Adding an engine: extend `lib/engines.ts`, `introspect.ts`, `codegen.ts`, `db.rs`, and `ENGINES` in `backend/database/models.py` (then a migration).
 - Theme uses CSS variables (`index.css`); do not rely on colour alone for state (environment badges have text + symbol).
@@ -45,6 +52,11 @@ Before finishing a change: `npx tsc --noEmit`, `npm test`, `python manage.py tes
 - Windows dev: use Git Bash/PowerShell; avoid committing `node_modules`, `.venv`, `target/` (see `.gitignore`).
 
 ## Known limitations / honest status
+- Three bridges exist: `tauri.ts` (native), `http.ts` (local host `desktop/host/server.mjs`, MySQL/MariaDB/PostgreSQL + fs + git, simulated terminal) and `demo.ts` (browser). Keep `server.mjs` RPC names in sync with `http.ts`.
+- Autocomplete: `editor/completion.ts` (Monaco provider) + pure helpers in `lib/sqlContext.ts` (fuzzy ranking, clause detection, table/alias extraction, tested) + `lib/usage.ts` (usage ranking). Schema comes from `Introspector.fullSchema` cached per database in `store.schemaCache[conn][ns]` (tables, column types/keys, foreign keys). Selecting a database = `store.selectDatabase` (sets `selectedNs`, loads schema, opens a query tab); the host applies it with `USE`/`search_path` before each query (the native Rust build ignores `database` for now).
+- Local stacks: `desktop/host/stacks.mjs` + `frontend/src/store/stacks.ts` (polling, auto-connect, Start). Laragon runs mysqld as launcher+child; only the child listens.
+- Secrets in host mode: `desktop/host/secrets.mjs` (Windows DPAPI per-user). Use `add-connection.mjs` with `FORGE_DB_PASSWORD` env, never a CLI arg.
+- mysql2 gotchas in the host: `fields` can be `null`; OK-packet statements need `finish()` on `result`; killing a query mid-stream is fatal for that connection, so `ensure()` reconnects the session.
 - The Rust layer has NOT been compiled yet on the dev machine (Windows App Control blocked cargo build scripts, os error 4551). Treat `desktop/src-tauri` as unverified until `cargo check` passes locally or in the CI workflow.
 - Rust code is written to compile on stable but check `cargo check` output first if the build fails; installers are unsigned.
 - Release rows from `seed_releases` are placeholders (zero checksums). Replace with real artifacts.

@@ -6,7 +6,7 @@ import { ENGINES } from '../lib/engines'
 import { formatSql } from '../lib/format'
 import { mod } from '../lib/os'
 import { useApp, type Tab } from '../store/app'
-import ResultsGrid from '../database/ResultsGrid'
+import QueryResultGrid from '../database/QueryResultGrid'
 import { EnvBadge, Splitter, useSplitter } from '../components/ui'
 import CodeEditor from './CodeEditor'
 
@@ -15,7 +15,11 @@ type SqlTabT = Extract<Tab, { kind: 'sql' }>
 export default function SqlTab({ tab }: { tab: SqlTabT }) {
   const st = useApp()
   const ed = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const { size, start } = useSplitter(260, 80, 900, 'y', true)
+  const side = useApp((x) => x.layout.results)
+  const below = useSplitter(260, 80, 900, 'y', true, 'results-h')
+  const beside = useSplitter(520, 260, 1400, 'x', true, 'results-w')
+  const right = side === 'right'
+  const { size, start } = right ? beside : below
   const connId = tab.connId ?? st.activeConnId
   const cfg = st.connections.find((c) => c.id === connId)
   const sess = connId ? st.sessions[connId] : undefined
@@ -57,6 +61,7 @@ export default function SqlTab({ tab }: { tab: SqlTabT }) {
 
   const onMount = (e: editor.IStandaloneCodeEditor, monaco: typeof import('monaco-editor')) => {
     ed.current = e
+    e.focus() // a new/selected query tab is ready to type in
     e.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => run(sel()?.text.trim() ? 'selection' : 'all'))
     e.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => run('statement'))
     e.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void useApp.getState().saveTab(tab.id))
@@ -83,11 +88,12 @@ export default function SqlTab({ tab }: { tab: SqlTabT }) {
         <button className="btn" onClick={() => st.setDialog({ type: 'save-query', sql: tab.content })}><BookmarkPlus size={13} />Save query</button>
         <button className="btn" onClick={exportAll} disabled={!r}>Export</button>
       </div>
-      <div className="min-h-[80px] flex-1">
+      <div className={`flex min-h-0 flex-1 ${right ? 'flex-row' : 'flex-col'}`}>
+      <div className="min-h-[80px] min-w-[320px] flex-1">
         <CodeEditor path={`tab-${tab.id}.sql`} language="sql" value={tab.content} onChange={(v) => st.updateTab(tab.id, { content: v, dirty: true })} onMount={onMount} />
       </div>
-      <Splitter dir="y" onMouseDown={start} />
-      <div className="flex min-h-0 flex-col bg-panel" style={{ height: size }}>
+      {st.showResults && <Splitter dir={right ? 'x' : 'y'} onMouseDown={start} />}
+      {st.showResults && <div className="flex min-h-0 min-w-0 flex-col bg-panel" style={right ? { width: size } : { height: size }}>
         {!res && <div className="p-4 text-xs text-muted">Run a query to see results here. {mod()}+Enter runs the query, {mod()}+Shift+Enter runs the current statement.</div>}
         {res?.running && <div className="p-4 text-xs text-accent" role="status">Running…</div>}
         {res?.error && !res.running && (
@@ -96,14 +102,15 @@ export default function SqlTab({ tab }: { tab: SqlTabT }) {
         {r && !res?.running && (
           <>
             <div className="flex shrink-0 items-center gap-3 border-b border-line px-3 py-1 text-xs" role="status">
-              <span className="text-ok">✓ Query completed successfully</span>
-              <span>{r.columns.length ? `${r.rows.length.toLocaleString()} rows` : `${r.affected.toLocaleString()} rows affected`}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">Results</span><span className="text-ok">✓ Query completed successfully</span>
+              <span>{r.columns.length ? `${r.rows.length.toLocaleString()} ${r.rows.length === 1 ? 'row' : 'rows'}` : `${r.affected.toLocaleString()} rows affected`}</span>
               <span>{(r.elapsedMs / 1000).toFixed(3)} seconds</span>
               <span className="text-muted">{cfg?.database || cfg?.filePath || ''}</span>
             </div>
-            {r.columns.length > 0 ? <div className="min-h-0 flex-1"><ResultsGrid columns={r.columns} rows={r.rows} engine={engine} truncated={r.truncated} /></div> : <div className="p-4 text-xs text-muted">Statement executed. No result set.</div>}
+            {r.columns.length > 0 ? <div className="min-h-0 flex-1"><QueryResultGrid tabId={tab.id} res={res} result={r} /></div> : <div className="p-4 text-xs text-muted">Statement executed. No result set.</div>}
           </>
         )}
+      </div>}
       </div>
     </div>
   )

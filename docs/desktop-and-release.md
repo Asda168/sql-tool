@@ -22,9 +22,23 @@ Windows NSIS installer, macOS dmg, and Linux deb/rpm/AppImage and uploads them w
 **Windows App Control / Smart App Control:** if `cargo build` fails with `An Application Control policy has blocked this file (os error 4551)`,
 the OS is refusing to run Rust build scripts. Use the CI workflow or ask an administrator to allow the toolchain; do not disable security policy casually.
 
-## Interim launcher
-`scripts/launch-forge.cmd` builds (if needed) and serves the web build on http://localhost:4173/app and opens the browser (browser demo mode).
-A Desktop shortcut can point at it.
+## Local host mode (shortcut launcher)
+`scripts/launch-forge.vbs` (the Desktop shortcut runs it through `wscript`, so no console windows appear) starts (1) a static server for the UI on :4173 and (2) `desktop/host/server.mjs` on 127.0.0.1:4174, then opens
+Edge in app mode with `?forgeHost=…&forgeToken=…`. The host provides **real MySQL/MariaDB/PostgreSQL, files and Git** to the window.
+Security: loopback only, random per-launch token (`X-Forge-Token`), Origin and Host checks, passwords in memory only.
+Limits vs. the native app: no SQLite files, SQL Server or SSH tunnels; the terminal is simulated (no PTY); passwords are re-entered after a restart.
+### Laragon / WAMP / XAMPP
+`desktop/host/stacks.mjs` detects Laragon, WampServer and XAMPP (install folders on any local drive, plus running `mysqld`/`mariadbd` processes and their listening port).
+The app polls every 5 s: the **Local servers** section of the Database panel shows each server (running/stopped), and when a server comes up
+(or is already running at launch) the app connects to it, reusing a saved connection on the same 127.0.0.1 port or creating `<Stack> MySQL`
+(root, empty password). **Start** launches a stopped server after a confirmation. Stack detection is Windows-only and not yet in the native Rust build.
+
+The background services exit on their own ~5 minutes after the app window closes (`FORGE_IDLE_MINUTES`). `scripts/launch-forge.cmd` is the older visible-console variant.
+
+Footer switchers (Beekeeper-style): the connection chip switches/connects/disconnects saved connections and retargets the current SQL tab; the database chip
+switches the active database/schema, which the host applies with `USE`/`search_path` before each query.
+
+On first run in this mode the app creates and connects a `MySQL Local` connection (127.0.0.1:3306, root, empty password).
 
 ## Shortcuts
 The NSIS installer creates a Start Menu entry and offers a Desktop shortcut. A manual Desktop shortcut can point at the installed

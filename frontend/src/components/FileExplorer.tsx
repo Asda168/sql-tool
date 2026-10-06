@@ -22,8 +22,8 @@ function Node({ entry, depth }: { entry: DirEntry; depth: number }) {
   const isActive = activeFile && 'filePath' in activeFile && activeFile.filePath === entry.path
   return (
     <>
-      <div role="treeitem" aria-expanded={entry.isDir ? open : undefined} className={`flex cursor-pointer items-center gap-1 rounded px-1 py-[3px] text-xs hover:bg-raised ${isActive ? 'bg-accent/15' : ''}`} style={{ paddingLeft: 4 + depth * 12 }}
-        onClick={() => (entry.isDir ? setOpen(!open) : void st.openFile(entry.path))}
+      <div role="treeitem" aria-expanded={entry.isDir ? open : undefined} className={`flex cursor-pointer items-center gap-1 rounded px-1 py-[3px] text-xs hover:bg-raised ${isActive || st.selectedEntry?.path === entry.path ? 'bg-accent/15' : ''}`} style={{ paddingLeft: 4 + depth * 12 }}
+        onClick={() => { useApp.setState({ selectedEntry: { path: entry.path, name: entry.name, isDir: entry.isDir } }); entry.isDir ? setOpen(!open) : void st.openFile(entry.path) }}
         onContextMenu={(e) => ctxOpen(e, fileMenu(entry, () => { setOpen(true); void load(); st.bumpFs() }))}>
         <span className="w-3 text-muted">{entry.isDir ? (open ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : null}</span>
         {entry.isDir ? (open ? <FolderOpen size={13} className="text-accent" /> : <Folder size={13} className="text-accent" />) : <File size={13} className="text-muted" />}
@@ -72,18 +72,7 @@ export default function FileExplorer() {
   useEffect(() => { setRoot(null); void load() }, [st.projectPath, st.fsVersion]) // eslint-disable-line react-hooks/exhaustive-deps
   const pick = async () => { const p = await bridge().fs.pickFolder(); if (p) await st.openProject(p) }
 
-  if (!st.projectPath) {
-    return (
-      <div className="p-3 text-xs">
-        <p className="mb-3 text-muted">No project open.</p>
-        <div className="flex flex-col gap-2">
-          <button className="btn btn-primary justify-center" onClick={pick}><FolderOpen size={13} />Open Project</button>
-          <button className="btn justify-center" onClick={() => st.setDialog({ type: 'clone' })}><GitFork size={13} />Clone Repository</button>
-        </div>
-        {st.recentProjects.length > 0 && <div className="mt-4"><div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Recent</div>{st.recentProjects.map((p) => <button key={p} className="block w-full truncate rounded px-1 py-1 text-left hover:bg-raised" title={p} onClick={() => st.openProject(p)}>{basename(p)}</button>)}</div>}
-      </div>
-    )
-  }
+  if (!st.projectPath) return null
   const rootEntry = { path: st.projectPath, isDir: true, name: basename(st.projectPath) }
   return (
     <div className="flex h-full flex-col">
@@ -101,7 +90,13 @@ export default function FileExplorer() {
           <div className="flex flex-wrap gap-1">{st.projectInfo.commands.map((c) => <button key={c} className="btn code !px-1.5 !py-0.5 !text-[10px]" title="Run in terminal" onClick={() => runInTerminal(c)}><Terminal size={10} />{c}</button>)}</div>
         </div>
       )}
-      <div role="tree" className="min-h-0 flex-1 overflow-auto p-1" onContextMenu={(e) => ctxOpen(e, fileMenu(rootEntry, () => void load()))}>
+      <div role="tree" tabIndex={0} aria-label="Project files" className="min-h-0 flex-1 overflow-auto p-1 outline-none" onKeyDown={(e) => {
+        const sel = st.selectedEntry
+        if (!sel || (e.key !== 'F2' && e.key !== 'Delete')) return
+        e.preventDefault()
+        const item = fileMenu(sel, () => void load()).find((m) => m.label.startsWith(e.key === 'F2' ? 'Rename' : 'Delete'))
+        item?.onClick()
+      }} onContextMenu={(e) => ctxOpen(e, fileMenu(rootEntry, () => void load()))}>
         {root?.map((e) => <Node key={e.path} entry={e} depth={0} />)}
         {root && !root.length && <Empty>This folder is empty. Right-click to create a file.</Empty>}
       </div>

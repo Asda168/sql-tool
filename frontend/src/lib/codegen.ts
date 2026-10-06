@@ -19,7 +19,7 @@ export const COLUMN_TYPES: Record<EngineId, string[]> = {
 const NEEDS_LENGTH = /^(VARCHAR|CHAR|NVARCHAR|DECIMAL|NUMERIC|VARBINARY)$/i
 const KEYWORD_DEFAULT = /^(CURRENT_TIMESTAMP|NULL|TRUE|FALSE|NOW\(\)|GETDATE\(\)|\(.*\)|-?\d+(\.\d+)?)$/i
 
-function columnSql(e: EngineId, c: DesignColumn): string {
+export function columnSql(e: EngineId, c: DesignColumn): string {
   let type = c.type.toUpperCase()
   if (c.length && NEEDS_LENGTH.test(type)) type += `(${c.length})`
   const my = e === 'mysql' || e === 'mariadb'
@@ -57,3 +57,26 @@ export function generateCreateTable(e: EngineId, t: TableDesign): string {
 }
 
 export const blankColumn = (): DesignColumn => ({ name: '', type: 'VARCHAR', length: '255', nullable: true, primaryKey: false, autoIncrement: false, unique: false, default: '' })
+
+const typeOf = (c: DesignColumn) => c.type.toUpperCase() + (c.length && NEEDS_LENGTH.test(c.type) ? `(${c.length})` : '')
+const defaultSql = (d: string) => (KEYWORD_DEFAULT.test(d.trim()) ? d.trim() : `'${d.trim().replace(/'/g, "''")}'`)
+
+export const alterAddColumn = (e: EngineId, table: string, c: DesignColumn) => `ALTER TABLE ${table} ADD ${e === 'mssql' ? '' : 'COLUMN '}${columnSql(e, c)}`
+export const alterDropColumn = (e: EngineId, table: string, name: string) => `ALTER TABLE ${table} DROP COLUMN ${q(e, name)}`
+
+/** Statements that change an existing column (rename + type + nullability + default). SQLite cannot do this in place. */
+export function alterModifyColumn(e: EngineId, table: string, oldName: string, c: DesignColumn): string[] {
+  if (e === 'sqlite') throw new Error('SQLite cannot alter columns in place. Recreate the table instead.')
+  if (e === 'mysql' || e === 'mariadb') return [`ALTER TABLE ${table} CHANGE COLUMN ${q(e, oldName)} ${columnSql(e, c)}`]
+  const out: string[] = []
+  if (e === 'postgres') {
+    if (oldName !== c.name) out.push(`ALTER TABLE ${table} RENAME COLUMN ${q(e, oldName)} TO ${q(e, c.name)}`)
+    out.push(`ALTER TABLE ${table} ALTER COLUMN ${q(e, c.name)} TYPE ${typeOf(c)}`)
+    out.push(`ALTER TABLE ${table} ALTER COLUMN ${q(e, c.name)} ${c.nullable ? 'DROP' : 'SET'} NOT NULL`)
+    out.push(c.default.trim() ? `ALTER TABLE ${table} ALTER COLUMN ${q(e, c.name)} SET DEFAULT ${defaultSql(c.default)}` : `ALTER TABLE ${table} ALTER COLUMN ${q(e, c.name)} DROP DEFAULT`)
+    return out
+  }
+  if (oldName !== c.name) out.push(`EXEC sp_rename '${table.replace(/[\[\]]/g, '').replace(/'/g, "''")}.${oldName.replace(/'/g, "''")}', '${c.name.replace(/'/g, "''")}', 'COLUMN'`)
+  out.push(`ALTER TABLE ${table} ALTER COLUMN ${q(e, c.name)} ${typeOf(c)} ${c.nullable ? 'NULL' : 'NOT NULL'}`)
+  return out
+}

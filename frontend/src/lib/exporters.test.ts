@@ -55,3 +55,18 @@ describe('codegen', () => {
     expect(generateCreateTable('sqlite', t)).toContain('INTEGER PRIMARY KEY AUTOINCREMENT')
   })
 })
+
+import { alterAddColumn, alterDropColumn, alterModifyColumn, blankColumn } from './codegen'
+describe('alter helpers', () => {
+  const col = { ...blankColumn(), name: 'email', type: 'VARCHAR', length: '255', nullable: false }
+  it('builds ADD/DROP per engine', () => {
+    expect(alterAddColumn('mysql', '`users`', col)).toBe('ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255) NOT NULL')
+    expect(alterAddColumn('mssql', '[users]', col)).toBe('ALTER TABLE [users] ADD [email] VARCHAR(255) NOT NULL')
+    expect(alterDropColumn('postgres', '"users"', 'email')).toBe('ALTER TABLE "users" DROP COLUMN "email"')
+  })
+  it('modifies columns per engine', () => {
+    expect(alterModifyColumn('mysql', '`u`', 'mail', col)[0]).toContain('CHANGE COLUMN `mail` `email` VARCHAR(255) NOT NULL')
+    expect(alterModifyColumn('postgres', '"u"', 'mail', col)).toHaveLength(4 + 0)
+    expect(() => alterModifyColumn('sqlite', '"u"', 'a', col)).toThrow()
+  })
+})

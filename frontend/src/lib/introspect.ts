@@ -8,6 +8,11 @@ export interface ColumnInfo { name: string; type: string; nullable: boolean; key
 export interface IndexInfo { name: string; unique: boolean; columns: string[] }
 export interface FkInfo { name: string; column: string; refTable: string; refColumn: string }
 export interface NamedObject { name: string; detail: string }
+export interface SchemaColumn { name: string; type: string; key: string }
+export interface SchemaFk { table: string; column: string; refTable: string; refColumn: string }
+/** Everything autocomplete needs for one database/schema, loaded with a handful of queries (not one per table). */
+export interface SchemaInfo { tables: Record<string, { kind: 'table' | 'view'; columns: SchemaColumn[] }>; fks: SchemaFk[]; loadedAt: number }
+
 export interface TableDetails { columns: ColumnInfo[]; indexes: IndexInfo[]; foreignKeys: FkInfo[] }
 
 const L = (e: EngineId, v: string) => sqlLiteral(e, v)
@@ -55,6 +60,35 @@ export class Introspector {
       : `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = ${L(e, ns)} ORDER BY table_name, ordinal_position`
     for (const r of await this.q(sql)) (out[s(r[0])] ||= []).push(s(r[1]))
     return out
+  }
+
+  async fullSchema(ns: string): Promise<SchemaInfo> {
+    const e = this.engine
+    const info: SchemaInfo = { tables: {}, fks: [], loadedAt: Date.now() }
+    for (const t of await this.tables(ns)) info.tables[t.name] = { kind: t.kind, columns: [] }
+    const push = (table: string, c: SchemaColumn) => { (info.tables[table] ||= { kind: 'table', columns: [] }).columns.push(c) }
+    if (e === 'sqlite') {
+      for (const t of Object.keys(info.tables)) {
+        for (const r of await this.q(`PRAGMA table_info(${L(e, t)})`)) push(t, { name: s(r[1]), type: s(r[2]), key: Number(r[5]) > 0 ? 'PRI' : '' })
+        for (const r of await this.q(`PRAGMA foreign_key_list(${L(e, t)})`)) info.fks.push({ table: t, column: s(r[3]), refTable: s(r[2]), refColumn: s(r[4]) })
+      }
+      return info
+    }
+    if (e === 'mssql') {
+      for (const r of await this.q(`SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM [${ns}].INFORMATION_SCHEMA.COLUMNS ORDER BY TABLE_NAME, ORDINAL_POSITION`)) push(s(r[0]), { name: s(r[1]), type: s(r[2]), key: '' })
+      return info
+    }
+    const n = L(e, ns)
+    const pg = e === 'postgres'
+    const cols = await this.q(pg
+      ? `SELECT table_name, column_name, data_type, '' FROM information_schema.columns WHERE table_schema = ${n} ORDER BY table_name, ordinal_position`
+      : `SELECT table_name, column_name, column_type, column_key FROM information_schema.columns WHERE table_schema = ${n} ORDER BY table_name, ordinal_position`)
+    for (const r of cols) push(s(r[0]), { name: s(r[1]), type: s(r[2]), key: s(r[3]) })
+    const fks = await this.q(pg
+      ? `SELECT tc.table_name, kcu.column_name, ccu.table_name, ccu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = ${n}`
+      : `SELECT table_name, column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_schema = ${n} AND referenced_table_name IS NOT NULL`).catch(() => [])
+    for (const r of fks) info.fks.push({ table: s(r[0]), column: s(r[1]), refTable: s(r[2]), refColumn: s(r[3]) })
+    return info
   }
 
   async details(ns: string, table: string): Promise<TableDetails> {

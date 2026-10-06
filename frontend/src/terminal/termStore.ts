@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { bridge } from '../bridge'
 import { useApp } from '../store/app'
 
 export interface TermItem { key: string; title: string; cwd: string; shell: string }
@@ -21,6 +22,11 @@ export const useTerms = create<TermState>((set, get) => ({
     const key = `term-${n}`
     const item: TermItem = { key, title: `Terminal ${n}`, cwd: cwd ?? app.projectPath ?? '', shell: shell ?? app.settings.terminalShell }
     set({ items: [...get().items, item], activeKey: key, counter: n })
+    // name the tab after the shell it runs (Git Bash, PowerShell, CMD…)
+    void bridge().term.shells().then((list) => {
+      const label = (item.shell === 'default' ? list[0] : list.find((x) => x.id === item.shell))?.label
+      if (label) set({ items: get().items.map((i) => (i.key === key ? { ...i, title: label } : i)) })
+    }).catch(() => {})
     useApp.setState({ showTerminal: true })
   },
   remove: (key) => {
@@ -48,4 +54,11 @@ export async function runInTerminal(cmd: string) {
     if (id) return void (await import('../bridge')).bridge().term.write(id, cmd + String.fromCharCode(13))
     await new Promise((r) => setTimeout(r, 100))
   }
+}
+
+/** Show/hide the terminal panel. Hiding keeps every shell running; showing creates the first shell only if there is none. */
+export function toggleTerminal() {
+  if (useApp.getState().showTerminal) { useApp.setState({ showTerminal: false }); return }
+  if (!useTerms.getState().items.length) useTerms.getState().add()
+  else useApp.setState({ showTerminal: true })
 }

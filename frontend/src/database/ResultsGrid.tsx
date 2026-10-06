@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from 'lucide-react'
+import { useScrollWindow } from '../lib/useScrollWindow'
 import { EXPORT_FORMATS, exportData, type ExportFormat } from '../lib/exporters'
 import { bridge } from '../bridge'
 import { useApp } from '../store/app'
@@ -31,7 +32,6 @@ export default function ResultsGrid(p: GridProps) {
   const [pageSize, setPageSize] = useState(200)
   const [page, setPage] = useState(0)
   const [widths, setWidths] = useState<Record<number, number>>({})
-  const [scrollTop, setScrollTop] = useState(0)
   const [editing, setEditing] = useState<{ row: number; col: number; text: string } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const body = useRef<HTMLDivElement>(null)
@@ -58,9 +58,8 @@ export default function ResultsGrid(p: GridProps) {
   const pages = Math.max(1, Math.ceil(view.length / pageSize))
   const cur = Math.min(page, pages - 1)
   const pageIdx = view.slice(cur * pageSize, (cur + 1) * pageSize)
-  const viewportH = body.current?.clientHeight ?? 400
-  const first = Math.max(0, Math.floor(scrollTop / ROW_H) - 5)
-  const last = Math.min(pageIdx.length, Math.ceil((scrollTop + viewportH) / ROW_H) + 5)
+  const win = useScrollWindow(body, ROW_H)
+  const { first, last } = win.range(pageIdx.length)
   const visible = pageIdx.slice(first, last)
   const w = (i: number) => widths[i] ?? 160
   const totalW = 48 + p.columns.reduce((s, _c, i) => s + w(i), 0)
@@ -93,7 +92,7 @@ export default function ResultsGrid(p: GridProps) {
       <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1 text-xs">
         <Search size={13} className="text-muted" />
         <input aria-label="Filter rows" className="w-48 bg-transparent outline-none placeholder:text-muted" placeholder="Filter…" value={filter} onChange={(e) => { setFilter(e.target.value); setPage(0) }} />
-        <span className="text-muted">{view.length.toLocaleString()}{filter ? ` of ${p.rows.length.toLocaleString()}` : ''} rows</span>
+        <span className="text-muted">{view.length.toLocaleString()}{filter ? ` of ${p.rows.length.toLocaleString()}` : ''} {view.length === 1 && !filter ? 'row' : 'rows'}</span>
         {p.truncated && <span className="rounded border border-warn/50 px-1 text-warn" title="Only the first rows were loaded. Raise the row limit in Settings → Database.">row limit reached</span>}
         <div className="flex-1" />
         <select aria-label="Page size" className="rounded border border-line bg-bg px-1 py-0.5" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0) }}>
@@ -111,7 +110,7 @@ export default function ResultsGrid(p: GridProps) {
           )}
         </div>
       </div>
-      <div ref={body} className="code relative min-h-0 flex-1 overflow-auto text-[12.5px]" onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} style={{ fontSize: 12.5 }}>
+      <div ref={body} className="code scroll-stable relative min-h-0 flex-1 overflow-auto text-[12.5px]" onScroll={win.onScroll} style={{ fontSize: 12.5 }}>
         <div style={{ width: totalW, minWidth: '100%' }}>
           <div className="sticky top-0 z-10 flex border-b border-line bg-raised" style={{ height: ROW_H }}>
             <div className="shrink-0 border-r border-line" style={{ width: 48 }} />

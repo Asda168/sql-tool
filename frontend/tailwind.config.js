@@ -5,11 +5,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: 'rgb(var(--bg) / <alpha-value>)', panel: 'rgb(var(--panel) / <alpha-value>)',
+        bg: 'rgb(var(--bg) / <alpha-value>)', panel: 'rgb(var(--panel) / <alpha-value>)', editor: 'rgb(var(--editor) / <alpha-value>)',
         raised: 'rgb(var(--raised) / <alpha-value>)', line: 'rgb(var(--line) / <alpha-value>)',
         fg: 'rgb(var(--fg) / <alpha-value>)', muted: 'rgb(var(--muted) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)', danger: 'rgb(var(--danger) / <alpha-value>)',
-        warn: 'rgb(var(--warn) / <alpha-value>)', ok: 'rgb(var(--ok) / <alpha-value>)',
+        warn: 'rgb(var(--warn) / <alpha-value>)', mint: 'rgb(var(--mint) / <alpha-value>)', violet: 'rgb(var(--violet) / <alpha-value>)', ink: 'rgb(var(--ink) / <alpha-value>)', ok: 'rgb(var(--ok) / <alpha-value>)',
       },
       fontFamily: { mono: ['"JetBrains Mono"', 'monospace'], sans: ['Inter', 'system-ui', 'sans-serif'] },
       borderRadius: { md: '6px', lg: '8px', xl: '10px' },

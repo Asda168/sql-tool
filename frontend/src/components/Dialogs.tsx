@@ -46,10 +46,10 @@ const blank = (engine: EngineId = 'mysql'): ConnectionConfig => ({
   username: ENGINES[engine].defaultUser, database: '', filePath: '', ssl: false, sshEnabled: false, sshHost: '', sshPort: 22, sshUser: '', timeoutSeconds: 10,
 })
 
-export function ConnectionDialog({ editId, engine }: { editId?: string; engine?: EngineId }) {
+export function ConnectionDialog({ editId, engine, initial }: { editId?: string; engine?: EngineId; initial?: Partial<ConnectionConfig> & { password?: string } }) {
   const { connections, saveConnection, connect, setDialog, toast } = useApp()
-  const [c, setC] = useState<ConnectionConfig>(() => connections.find((x) => x.id === editId) ?? blank(engine))
-  const [password, setPassword] = useState('')
+  const [c, setC] = useState<ConnectionConfig>(() => connections.find((x) => x.id === editId) ?? { ...blank(initial?.engine ?? engine), ...(initial ? Object.fromEntries(Object.entries(initial).filter(([k, v]) => k !== 'password' && v !== undefined)) : {}) })
+  const [password, setPassword] = useState(initial?.password ?? '')
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const eng = ENGINES[c.engine]
@@ -75,9 +75,10 @@ export function ConnectionDialog({ editId, engine }: { editId?: string; engine?:
   }
 
   return (
-    <Modal title={editId ? 'Edit connection' : 'New connection'} onClose={() => setDialog(null)} width="max-w-2xl" banner={c.environment === 'production' ? 'PRODUCTION DATABASE' : undefined}>
+    <Modal title={editId ? 'EDIT CONNECTION' : 'NEW CONNECTION'} onClose={() => setDialog(null)} width="max-w-2xl" banner={c.environment === 'production' ? 'PRODUCTION DATABASE' : undefined}>
       <div className="grid grid-cols-2 gap-3 p-4">
         {bridge().kind === 'demo' && <p className="col-span-2 rounded-md border border-accent/40 bg-accent/10 p-2 text-xs">Browser demo: every connection opens the built-in sample database (SQLite). Install the desktop app to reach real servers.</p>}
+        {bridge().kind === 'host' && <p className="col-span-2 rounded-md border border-ok/40 bg-ok/10 p-2 text-xs">Local host mode: MySQL, MariaDB and PostgreSQL connect directly. The password is kept in memory for this session only, so you re-enter it after restarting. SQLite files, SQL Server and SSH tunnels need the native app.</p>}
         <Field label="Database engine">
           <select className="input" value={c.engine} onChange={(e) => changeEngine(e.target.value as EngineId)}>{ENGINE_LIST.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}</select>
         </Field>

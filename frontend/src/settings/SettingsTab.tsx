@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { DEFAULT_SETTINGS, useApp, type Settings } from '../store/app'
 import { Field } from '../components/ui'
 import { mod } from '../lib/os'
@@ -13,14 +13,16 @@ const Toggle = ({ label, v, on }: { label: string; v: boolean; on: (b: boolean) 
 
 export const SHORTCUTS: [string, string][] = [
   ['Ctrl/Cmd + Enter', 'Run SQL'], ['Ctrl/Cmd + Shift + Enter', 'Run current statement'], ['Ctrl/Cmd + S', 'Save'],
-  ['Ctrl/Cmd + P', 'Quick open file'], ['Ctrl/Cmd + Shift + P', 'Command palette'], ['Ctrl/Cmd + F', 'Find'], ['Ctrl/Cmd + H', 'Replace'],
+  ['Ctrl/Cmd + P', 'Quick open file'], ['Ctrl/Cmd + E', 'Go to table'], ['Ctrl/Cmd + Shift + P', 'Command palette'], ['Ctrl/Cmd + F', 'Find'], ['Ctrl/Cmd + H', 'Replace'],
   ['Ctrl/Cmd + B', 'Toggle sidebar'], ['Ctrl/Cmd + J', 'Toggle terminal'], ['Ctrl/Cmd + +', 'Increase font'], ['Ctrl/Cmd + -', 'Decrease font'],
   ['Ctrl/Cmd + 0', 'Reset font'], ['Ctrl + mouse wheel', 'Zoom editor'], ['Alt + click', 'Add cursor'], ['Ctrl/Cmd + G', 'Go to line'], ['Ctrl/Cmd + Shift + O', 'Go to symbol'],
 ]
 
 export default function SettingsTab() {
   const { settings: s, setSettings, toast } = useApp()
-  const [cat, setCat] = useState<(typeof CATS)[number]>('Editor')
+  const settingsCat = useApp((x) => x.settingsCat)
+  const cat = (CATS.includes(settingsCat as never) ? settingsCat : 'Editor') as (typeof CATS)[number]
+  const setCat = (c: string) => useApp.setState({ settingsCat: c })
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings({ [k]: v } as Partial<Settings>)
   const num = (k: keyof Settings, min: number, max: number, step = 1) => <input className="input code" type="number" min={min} max={max} step={step} value={s[k] as number} onChange={(e) => set(k, Math.max(min, Math.min(max, Number(e.target.value))) as never)} />
 

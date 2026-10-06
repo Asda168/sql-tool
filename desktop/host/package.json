@@ -1,0 +1,16 @@
+{
+  "name": "mysql-forge-studio-host",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Local host service: real databases, files and Git for the app window when the native (Tauri) build is not available.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.5",
+    "node-pty": "^1.1.0",
+    "pg": "^8.23.1",
+    "pg-cursor": "^2.22.1"
+  }
+}

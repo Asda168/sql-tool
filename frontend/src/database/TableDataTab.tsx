@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Copy, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Pencil, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react'
 import { bridge } from '../bridge'
-import { pageSql, qualified, quoteIdent, sqlLiteral } from '../lib/engines'
+import { buildStatements } from '../lib/dataEdit'
+import { pageSql, qualified } from '../lib/engines'
 import type { ColumnInfo } from '../lib/introspect'
 import { useApp, type Tab } from '../store/app'
 import { EnvBadge } from '../components/ui'
 import { ctx } from './actions'
 import ResultsGrid from './ResultsGrid'
+import TableStructure from './TableStructure'
 
 const PAGE = 200
 
@@ -28,6 +30,8 @@ export default function TableDataTab({ tab }: { tab: Extract<Tab, { kind: 'table
   const [selected, setSelected] = useState<number | null>(null)
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
+  const [view, setView] = useState<'data' | 'structure' | 'indexes' | 'fks'>('data')
+  const [editMode, setEditMode] = useState(false) // read-only until the user opts in
 
   const pending = edits.size + deleted.size + (rows.length - loadedCount)
   const pkCols = useMemo(() => cols.filter((c) => c.key === 'PRI').map((c) => c.name), [cols])
@@ -77,19 +81,20 @@ export default function TableDataTab({ tab }: { tab: Extract<Tab, { kind: 'table
     if (selected >= loadedCount) { setRows((r) => r.filter((_, i) => i !== selected)); setSelected(null) } else setDeleted((d) => new Set(d).add(selected))
   }
 
+  const toggleEdit = async () => {
+    if (editMode) {
+      if (!(await guardPending())) return
+      setEdits(new Map()); setDeleted(new Set()); setRows((r) => r.slice(0, loadedCount)); setSelected(null); setEditMode(false)
+      return
+    }
+    if (cfg.environment === 'production' && !(await st.confirm({ title: 'Edit data on a PRODUCTION database?', body: `You are about to enable editing of "${tab.table}" on "${cfg.name}". Changes are only written when you press Save Changes, after one more confirmation.`, confirmLabel: 'Enable editing', danger: true, banner: 'PRODUCTION DATABASE' }))) return
+    setEditMode(true)
+  }
+
   const save = async () => {
     const { engine } = ctx(tab.connId)
-    const t = qualified(engine, tab.ns, tab.table)
-    const q = (n: string) => quoteIdent(engine, n)
-    const lit = (v: unknown) => sqlLiteral(engine, v)
-    const wherePk = (row: unknown[]) => pkCols.map((c) => { const v = row[columns.indexOf(c)]; return v === null ? `${q(c)} IS NULL` : `${q(c)} = ${lit(v)}` }).join(' AND ')
-    const stmts: string[] = []
-    edits.forEach((m, r) => { if (!deleted.has(r)) stmts.push(`UPDATE ${t} SET ${[...m].map(([c, v]) => `${q(columns[c])} = ${lit(v)}`).join(', ')} WHERE ${wherePk(rows[r])}`) })
-    deleted.forEach((r) => stmts.push(`DELETE FROM ${t} WHERE ${wherePk(rows[r])}`))
-    rows.slice(loadedCount).forEach((row) => {
-      const use = columns.map((_c, i) => i).filter((i) => row[i] !== null && row[i] !== '')
-      stmts.push(use.length ? `INSERT INTO ${t} (${use.map((i) => q(columns[i])).join(', ')}) VALUES (${use.map((i) => lit(row[i])).join(', ')})` : `INSERT INTO ${t} DEFAULT VALUES`)
-    })
+    let stmts: string[]
+    try { stmts = buildStatements({ engine, ns: tab.ns, table: tab.table, columns, pkCols, rows, loadedCount, edits, deleted }) } catch (e) { return setErr((e as Error).message) }
     if (!stmts.length) return
     const ok = await st.confirm({
       title: 'Save changes to the database',
@@ -107,17 +112,22 @@ export default function TableDataTab({ tab }: { tab: Extract<Tab, { kind: 'table
   }
 
   const pages = total === null ? null : Math.max(1, Math.ceil(total / PAGE))
+  const tabs: [typeof view, string][] = [['data', 'Data'], ['structure', 'Structure'], ['indexes', 'Indexes'], ['fks', 'Foreign Keys']]
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div role="tablist" aria-label="Table views" className="flex shrink-0 items-center gap-1 border-b border-line bg-panel px-2 text-xs">
+        <span className="code mr-2 py-1.5 font-semibold">{tab.table}</span>
+        {tabs.map(([id, label]) => <button key={id} role="tab" aria-selected={view === id} onClick={async () => { if (view === 'data' && id !== 'data' && !(await guardPending())) return; setView(id) }} className={`border-b-2 px-3 py-1.5 ${view === id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'}`}>{label}</button>)}
+      </div>
+      {view !== 'data' ? <div className="min-h-0 flex-1"><TableStructure tab={tab} view={view} /></div> : (<>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line bg-panel px-2 py-1.5 text-xs">
         <EnvBadge env={cfg.environment} />
-        <span className="code font-semibold">{tab.table}</span>
-        <div className="mx-1 h-4 w-px bg-line" />
-        <button className="btn" onClick={addRow} disabled={!editable}><Plus size={13} />Add row</button>
-        <button className="btn" onClick={dupRow} disabled={!editable || selected === null}><Copy size={13} />Duplicate</button>
-        <button className="btn" onClick={delRow} disabled={!editable || selected === null}><Trash2 size={13} />Delete row</button>
+        <button className="btn" onClick={addRow} disabled={!(editable && editMode)}><Plus size={13} />Add row</button>
+        <button className="btn" onClick={dupRow} disabled={!(editable && editMode) || selected === null}><Copy size={13} />Duplicate</button>
+        <button className="btn" onClick={delRow} disabled={!(editable && editMode) || selected === null}><Trash2 size={13} />Delete row</button>
         <button className="btn" onClick={async () => { if (await guardPending()) void load() }}><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button>
         <div className="mx-1 h-4 w-px bg-line" />
+        <button className={`btn ${editMode ? 'border-accent bg-accent/15 text-accent' : ''}`} aria-pressed={editMode} disabled={!editable} title={editable ? 'Allow changing rows in this table' : 'Needs a primary key to edit safely'} onClick={toggleEdit}><Pencil size={13} />{editMode ? 'Editing' : 'Edit Data'}</button>
         <button className="btn btn-primary" onClick={save} disabled={pending === 0}><Save size={13} />Save Changes{pending ? ` (${pending})` : ''}</button>
         <button className="btn" onClick={() => { setEdits(new Map()); setDeleted(new Set()); setRows((r) => r.slice(0, loadedCount)); setSelected(null) }} disabled={pending === 0}><Undo2 size={13} />Cancel Changes</button>
         <div className="flex-1" />
@@ -130,10 +140,11 @@ export default function TableDataTab({ tab }: { tab: Extract<Tab, { kind: 'table
       {!editable && cols.length > 0 && <div className="shrink-0 border-b border-warn/40 bg-warn/10 px-3 py-1 text-xs text-warn">This table has no primary key, so it is read-only (edits could not target a single row safely).</div>}
       {err && <div role="alert" className="shrink-0 whitespace-pre-wrap border-b border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-danger">{err}</div>}
       <div className="min-h-0 flex-1">
-        <ResultsGrid columns={columns} rows={shown} engine={sess.engine} tableName={tab.table} editable={editable}
+        <ResultsGrid columns={columns} rows={shown} engine={sess.engine} tableName={tab.table} editable={editable && editMode}
           edited={editedKeys} rowState={(r) => (r >= loadedCount ? 'new' : deleted.has(r) ? 'deleted' : undefined)}
           readOnlyCols={new Set()} onEdit={onEdit} selected={selected} onSelect={setSelected} />
       </div>
+      </>)}
     </div>
   )
 }

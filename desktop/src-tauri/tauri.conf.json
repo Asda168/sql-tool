@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [
-      { "title": "MySQL Forge Studio", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 600, "center": true }
+      { "title": "MySQL Forge Studio", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 600, "center": true, "decorations": false }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https:"
