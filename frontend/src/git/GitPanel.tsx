@@ -55,7 +55,7 @@ export default function GitPanel() {
     setBusy(''); await refresh()
   }
 
-  if (!cwd) return <Empty>Open a project to use Git.</Empty>
+  if (!cwd) return null
   if (status && !status.isRepo) {
     return (
       <div className="p-3 text-xs">

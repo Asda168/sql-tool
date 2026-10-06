@@ -67,7 +67,7 @@ export function SearchPanel() {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<{ path: string; line: number; preview: string }[] | null>(null)
   const go = async () => { if (st.projectPath && q.trim()) setHits(await bridge().fs.search(st.projectPath, q.trim()).catch(() => [])) }
-  if (!st.projectPath) return <Empty>Open a project to search its files.</Empty>
+  if (!st.projectPath) return null
   return (
     <div className="flex h-full flex-col text-xs">
       <div className="border-b border-line p-2"><input aria-label="Find in files" className="input" placeholder="Find in files (Enter)" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && go()} /></div>
