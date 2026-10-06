@@ -7,7 +7,7 @@ import { REPO, Section, SectionHead } from './Layout'
 const PKG: Record<string, string> = { exe: 'Installer (.exe)', portable: 'Portable (.zip)', dmg: 'Disk image (.dmg)', appimage: 'AppImage', deb: '.deb package', rpm: '.rpm package' }
 
 const BLOCKS: { id: Platform; title: string; reqs: string; icon: typeof Monitor; steps: string[] }[] = [
-  { id: 'windows', title: 'MySQL Forge Studio for Windows', reqs: 'Windows 10/11 · x64', icon: Monitor, steps: ['Download the installer and run it. No administrator rights are needed.', 'Launch MySQL Forge Studio from the Start menu or desktop shortcut.', 'Choose “Connect Database” or “Open Project”.'] },
+  { id: 'windows', title: 'MySQL Forge Studio for Windows', reqs: 'Windows 10/11 · x64', icon: Monitor, steps: ['Install Node.js 20+ from nodejs.org (one time).', 'Download the setup file below and double-click it. No administrator rights are needed; run it again any time to update.', 'Launch MySQL Forge Studio from the Desktop or Start menu shortcut, then choose “Connect Database” or “Open Project”.'] },
   { id: 'macos', title: 'MySQL Forge Studio for macOS', reqs: 'macOS 12+ · Apple silicon & Intel', icon: Apple, steps: ['Open the .dmg and drag the app into Applications.', 'First launch: right-click the app and choose Open (the build is not notarized yet).', 'Choose “Connect Database” or “Open Project”.'] },
   { id: 'linux', title: 'MySQL Forge Studio for Linux', reqs: 'Ubuntu 22.04+, Fedora 38+ · x64 & ARM64', icon: Terminal, steps: ['AppImage: chmod +x the file and run it. Or install the .deb / .rpm.', 'Needs webkit2gtk-4.1 and libsecret (installed by the .deb/.rpm).', 'Choose “Connect Database” or “Open Project”.'] },
 ]
@@ -68,6 +68,7 @@ export default function DownloadSection({ standalone = false }: { standalone?: b
               {mine && <span className="mt-2 w-fit rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent">Recommended for your system</span>}
               <ol className="my-4 list-decimal space-y-1.5 pl-5 text-sm text-muted">{b.steps.map((s) => <li key={s}>{s}</li>)}</ol>
               <div className="mt-auto space-y-2">
+                {b.id === 'windows' && <a className={mine ? 'btn-neon w-full' : 'btn-ghost w-full'} href="/install-forge-studio.cmd" download><DlIcon size={15} />Windows setup (.cmd)</a>}
                 {rs.map((r) => <button key={r.id} className={mine && ['exe', 'dmg', 'appimage'].includes(r.package_type) ? 'btn-neon w-full' : 'btn-ghost w-full justify-between'} onClick={() => download(r)}><span className="inline-flex items-center gap-2"><DlIcon size={15} />{PKG[r.package_type]} · {r.architecture}</span><span className="text-xs opacity-70">{formatBytes(r.file_size)}</span></button>)}
                 {!rs.length && <button className="btn-ghost w-full" disabled><DlIcon size={15} />Coming soon</button>}
               </div>
