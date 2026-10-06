@@ -1,6 +1,5 @@
-import { Database, Plus, Settings, SquareTerminal, type LucideIcon } from 'lucide-react'
+import { Database, Plus, Settings, type LucideIcon } from 'lucide-react'
 import { useApp, type LeftPanel } from '../store/app'
-import { toggleTerminal } from '../terminal/termStore'
 import { mod } from '../lib/os'
 
 /** Narrow 48px application sidebar: subtle line icons with a small cyan indicator on the active view. */
@@ -18,7 +17,6 @@ export default function ActivityBar() {
     <nav aria-label="Views" className="flex w-12 shrink-0 flex-col items-center border-r border-line bg-panel py-1">
       <Btn icon={Database} label="Database" active={panel('database')} hint={`${mod()}+Shift+D`} onClick={() => { st.setLeftPanel('database'); if (st.leftPanel === 'database') useApp.setState({ connList: true }) }} />
       <Btn icon={Plus} label="New Connection" onClick={() => st.setDialog({ type: 'connection' })} />
-      <Btn icon={SquareTerminal} label="Terminal" active={st.showTerminal} hint={`${mod()}+\``} onClick={toggleTerminal} />
       <div className="flex-1" />
       <Btn icon={Settings} label="Settings" active={st.tabs.find((t) => t.id === st.activeTabId)?.kind === 'settings'} onClick={() => st.openTab({ id: 'settings', kind: 'settings', title: 'Settings' })} />
     </nav>
