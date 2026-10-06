@@ -1,0 +1,29 @@
+@import '@fontsource/jetbrains-mono/300.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root, [data-theme='dark'] {
+  --bg: 11 15 23; --panel: 15 21 32; --raised: 23 31 46; --line: 36 46 66;
+  --fg: 214 222 235; --muted: 120 134 160; --accent: 34 190 220; --danger: 240 82 82; --warn: 234 170 50; --ok: 52 190 130;
+}
+[data-theme='light'] {
+  --bg: 246 248 251; --panel: 255 255 255; --raised: 238 242 247; --line: 214 221 232;
+  --fg: 22 30 46; --muted: 96 110 135; --accent: 8 126 164; --danger: 200 40 40; --warn: 170 110 0; --ok: 20 130 80;
+}
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-fg font-sans antialiased; margin: 0; }
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--line)) transparent; }
+.btn { @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1 text-xs hover:border-accent/60 disabled:opacity-40; }
+.btn-primary { @apply border-accent bg-accent text-bg font-medium hover:opacity-90; }
+.btn-danger { @apply border-danger bg-danger text-white hover:opacity-90; }
+.input { @apply w-full rounded-md border border-line bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent; }
+.code { font-family: var(--code-font, 'JetBrains Mono'), monospace; font-size: var(--code-size, 14px); }
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 1px; }
