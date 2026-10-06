@@ -1,4 +1,4 @@
-import { Database, Plus, Settings, type LucideIcon } from 'lucide-react'
+import { Database, Plus, type LucideIcon } from 'lucide-react'
 import { useApp, type LeftPanel } from '../store/app'
 import { mod } from '../lib/os'
 
@@ -18,7 +18,6 @@ export default function ActivityBar() {
       <Btn icon={Database} label="Database" active={panel('database')} hint={`${mod()}+Shift+D`} onClick={() => { st.setLeftPanel('database'); if (st.leftPanel === 'database') useApp.setState({ connList: true }) }} />
       <Btn icon={Plus} label="New Connection" onClick={() => st.setDialog({ type: 'connection' })} />
       <div className="flex-1" />
-      <Btn icon={Settings} label="Settings" active={st.tabs.find((t) => t.id === st.activeTabId)?.kind === 'settings'} onClick={() => st.openTab({ id: 'settings', kind: 'settings', title: 'Settings' })} />
     </nav>
   )
 }
