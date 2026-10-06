@@ -1,0 +1,36 @@
+[package]
+name = "mysql-forge-studio"
+version = "1.0.0"
+description = "MySQL Forge Studio - SQL client, code editor, Git and terminal"
+authors = ["MySQL Forge Studio"]
+edition = "2021"
+
+[lib]
+name = "mysql_forge_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "mysql", "postgres", "sqlite"] }
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "rustls"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+portable-pty = "0.8"
+trash = "5"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
