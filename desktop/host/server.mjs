@@ -9,7 +9,7 @@
 
 import http from 'node:http'
 import fs from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { spawn, execFile } from 'node:child_process'
@@ -26,7 +26,9 @@ const require = createRequire(import.meta.url)
 
 const run = promisify(execFile)
 const PORT = Number(process.env.FORGE_HOST_PORT || 4174)
-const TOKEN = process.env.FORGE_TOKEN || ''
+// The launcher passes a token; it is also kept in a per-user file so a restarted host accepts the token an already-open window holds.
+const TOKEN_FILE = path.join(process.env.LOCALAPPDATA || os.homedir(), 'MySQLForgeStudio', 'host-token')
+const TOKEN = process.env.FORGE_TOKEN || (existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() : '')
 const ORIGIN = process.env.FORGE_ORIGIN || 'http://localhost:4173'
 if (TOKEN.length < 24) {
   console.error('FORGE_TOKEN (>= 24 chars) is required.')
@@ -433,9 +435,12 @@ http.createServer(async (req, res) => {
 
 // Background service: exit when the app window has been gone for a while (the UI polls every few seconds while open)
 let lastRpc = Date.now()
-const IDLE_MS = Number(process.env.FORGE_IDLE_MINUTES || 5) * 60_000
+const IDLE_MS = Number(process.env.FORGE_IDLE_MINUTES || 30) * 60_000
 setInterval(async () => {
   if (Date.now() - lastRpc < IDLE_MS) return
+  // Keep serving while Laragon/WAMP/XAMPP (or any local MySQL/MariaDB) is still running, so an open app window never loses its host
+  const stacks = await detectStacks().catch(() => [])
+  if (stacks.some((s) => s.services?.some((x) => x.running))) { lastRpc = Date.now() - IDLE_MS + 5 * 60_000; return }
   const ui = Number(process.env.FORGE_UI_PORT || 0)
   if (ui) await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-NetTCPConnection -LocalPort ${ui} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }`], { windowsHide: true }).catch(() => {})
   process.exit(0)

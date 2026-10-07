@@ -7,11 +7,17 @@ import type { Bridge } from './types'
  */
 export function createHostBridge(base: string, token: string): Bridge {
   const rpc = async <T>(method: string, ...params: unknown[]): Promise<T> => {
-    let res: Response
-    try {
-      res = await fetch(`${base}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forge-Token': token }, body: JSON.stringify({ method, params }) })
-    } catch {
-      throw new Error('The local host service is not running. Start MySQL Forge Studio from its shortcut.')
+    let res: Response | undefined
+    // Retry briefly so a host that is just (re)starting does not surface as an error
+    for (let attempt = 0; attempt < 4 && !res; attempt++) {
+      try {
+        res = await fetch(`${base}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forge-Token': token }, body: JSON.stringify({ method, params }) })
+      } catch {
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 750))
+      }
+    }
+    if (!res) {
+      throw new Error('The local host service stopped (your database server may still be running). Reopen MySQL Forge Studio from its shortcut, then reconnect.')
     }
     if (!res.ok) throw new Error(res.status === 401 ? 'Local host rejected the access token. Restart the app from its shortcut.' : `Local host error (${res.status})`)
     const body = (await res.json()) as { result?: T; error?: string }
