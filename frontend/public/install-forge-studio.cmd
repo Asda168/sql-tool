@@ -48,7 +48,7 @@ try {
 
   Step 'Creating shortcuts'
   $vbs = Join-Path $app 'scripts\launch-forge.vbs'
-  $ico = Join-Path $app 'scriptsorge.ico'
+  $ico = Join-Path $app 'scripts\forge.ico'
   $ws = New-Object -ComObject WScript.Shell
   foreach ($loc in [Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')) {
     $lnk = $ws.CreateShortcut((Join-Path $loc 'MySQL Forge Studio.lnk'))
