@@ -1,6 +1,6 @@
 [package]
 name = "mysql-forge-studio"
-version = "1.0.2"
+version = "1.0.3"
 description = "MySQL Forge Studio - SQL client, code editor, Git and terminal"
 authors = ["MySQL Forge Studio"]
 edition = "2021"
