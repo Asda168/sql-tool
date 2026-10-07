@@ -57,15 +57,7 @@ jobs:
         run: |
           set -o pipefail
           npx tauri build ${{ matrix.args }} --bundles ${{ matrix.bundles }} 2>&1 | tee build.log || {
-            # Surface the compiler errors as run annotations (visible without downloading logs)
-            node -e "const t=require('fs').readFileSync('build.log','utf8');const m=[...t.matchAll(/(^|
-)(error(\[[A-Z0-9]+\])?:[^
-]*(
-[^
-]*){0,10})/g)].map(x=>x[2]).join('
----
-')||t.slice(-6000);console.log('::error title=Build failed::'+m.slice(0,9000).replace(/%/g,'%25').replace(//g,'%0D').replace(/
-/g,'%0A'))"
+            node ../.github/ci/annotate-errors.js build.log
             exit 1
           }
 
