@@ -48,16 +48,17 @@ try {
 
   Step 'Creating shortcuts'
   $vbs = Join-Path $app 'scripts\launch-forge.vbs'
+  $ico = Join-Path $app 'scriptsorge.ico'
   $ws = New-Object -ComObject WScript.Shell
   foreach ($loc in [Environment]::GetFolderPath('Desktop'), (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')) {
     $lnk = $ws.CreateShortcut((Join-Path $loc 'MySQL Forge Studio.lnk'))
     $lnk.TargetPath = 'wscript.exe'; $lnk.Arguments = "`"$vbs`""; $lnk.WorkingDirectory = Split-Path $vbs
-    $lnk.Description = 'MySQL Forge Studio'; $lnk.Save()
+    $lnk.Description = 'MySQL Forge Studio'; $lnk.IconLocation = "$ico,0"; $lnk.Save()
   }
   # Start the background services (no window) at Windows login so Laragon connections work as soon as the app opens
   $su = $ws.CreateShortcut((Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\MySQL Forge Studio services.lnk'))
   $su.TargetPath = 'wscript.exe'; $su.Arguments = "`"$vbs`" --background"; $su.WorkingDirectory = Split-Path $vbs
-  $su.WindowStyle = 7; $su.Description = 'MySQL Forge Studio background services'; $su.Save()
+  $su.WindowStyle = 7; $su.Description = 'MySQL Forge Studio background services'; $su.IconLocation = "$ico,0"; $su.Save()
 
   Write-Host "`nDone. Start 'MySQL Forge Studio' from the Desktop or the Start menu." -ForegroundColor Green
   $go = Read-Host 'Launch it now? (Y/n)'
