@@ -401,14 +401,12 @@ pub async fn db_cancel(session: String, sessions: State<'_, Sessions>) -> Result
 }
 
 /// All statements run in ONE transaction; the first error rolls everything back.
-#[tauri::command]
-pub async fn db_transaction(session: String, statements: Vec<String>, sessions: State<'_, Sessions>) -> Result<Value, String> {
-    let conn = sessions.0.lock().await.get(&session).map(|s| s.conn.clone()).ok_or("Session closed. Reconnect and try again.")?;
+async fn transact(conn: &Conn, statements: &[String]) -> Result<u64, String> {
     let mut affected = 0u64;
     macro_rules! tx {
         ($pool:expr) => {{
             let mut tx = $pool.begin().await.map_err(clean)?;
-            for s in &statements {
+            for s in statements {
                 match sqlx::raw_sql(s).execute(&mut *tx).await {
                     Ok(r) => affected += r.rows_affected(),
                     Err(e) => {
@@ -420,14 +418,14 @@ pub async fn db_transaction(session: String, statements: Vec<String>, sessions: 
             tx.commit().await.map_err(clean)?;
         }};
     }
-    match &conn {
+    match conn {
         Conn::My(p) => tx!(p),
         Conn::Pg(p) => tx!(p),
         Conn::Lite(p) => tx!(p),
         Conn::Ms(c) => {
             let mut cl = c.lock().await;
             cl.simple_query("BEGIN TRANSACTION").await.map_err(|e| e.to_string())?.into_results().await.map_err(|e| e.to_string())?;
-            for s in &statements {
+            for s in statements {
                 match cl.execute(s.as_str(), &[]).await {
                     Ok(r) => affected += r.total(),
                     Err(e) => {
@@ -439,5 +437,14 @@ pub async fn db_transaction(session: String, statements: Vec<String>, sessions: 
             cl.simple_query("COMMIT TRANSACTION").await.map_err(|e| e.to_string())?.into_results().await.map_err(|e| e.to_string())?;
         }
     }
+    Ok(affected)
+}
+
+#[tauri::command]
+pub async fn db_transaction(session: String, statements: Vec<String>, sessions: State<'_, Sessions>) -> Result<Value, String> {
+    let conn = sessions.0.lock().await.get(&session).map(|s| s.conn.clone()).ok_or("Session closed. Reconnect and try again.")?;
+    // sqlx's `&mut *tx` executor future trips a rustc higher-ranked-lifetime limitation ("Executor is not general enough") when it must be
+    // `Send`. Driving it with block_on inside block_in_place keeps it off the Send-checked path without changing behaviour.
+    let affected = tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(transact(&conn, &statements)))?;
     Ok(json!({ "affected": affected }))
 }
