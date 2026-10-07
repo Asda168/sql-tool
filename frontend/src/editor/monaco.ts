@@ -3,6 +3,8 @@ import editorWorker from 'monaco-editor/editor/editor.worker?worker'
 import { loader } from '@monaco-editor/react'
 import { splitStatements } from '../lib/sqlSafety'
 import { registerCompletion } from './completion'
+import { formatSql } from '../lib/format'
+import { useApp } from '../store/app'
 
 // Bundle Monaco locally (works offline in the desktop app) instead of loading it from a CDN.
 ;(self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = { getWorker: () => new editorWorker() }
@@ -20,6 +22,25 @@ monaco.editor.defineTheme(FORGE_LIGHT, {
 })
 
 registerCompletion()
+
+// Right-click > Format Document / Format Selection (Shift+Alt+F): Monaco has no built-in SQL formatter.
+function formatEngine() {
+  const st = useApp.getState()
+  const c = st.connections.find((x) => x.id === st.activeConnId)
+  return { engine: (st.activeConnId ? st.sessions[st.activeConnId]?.engine : undefined) ?? c?.engine ?? 'mysql', tab: st.settings.tabSize }
+}
+monaco.languages.registerDocumentFormattingEditProvider('sql', {
+  provideDocumentFormattingEdits(model) {
+    const { engine, tab } = formatEngine()
+    return [{ range: model.getFullModelRange(), text: formatSql(model.getValue(), engine, tab) }]
+  },
+})
+monaco.languages.registerDocumentRangeFormattingEditProvider('sql', {
+  provideDocumentRangeFormattingEdits(model, range) {
+    const { engine, tab } = formatEngine()
+    return [{ range, text: formatSql(model.getValueInRange(range), engine, tab) }]
+  },
+})
 
 monaco.languages.registerDocumentSymbolProvider('sql', {
   provideDocumentSymbols(model) {
