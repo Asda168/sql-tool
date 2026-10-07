@@ -1,7 +1,7 @@
 @echo off
 rem MySQL Forge Studio - Windows setup. Double-click to install; run again any time to update.
 rem Needs Node.js 20+ (https://nodejs.org). Installs to %LOCALAPPDATA%\MySQLForgeStudio\app and adds a Desktop shortcut.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((Get-Content -Raw -LiteralPath '%~f0') -split '#PS#')[1]"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((Get-Content -Raw -LiteralPath '%~f0') -split '(?m)^#PS#')[1]"
 echo.
 pause
 exit /b
