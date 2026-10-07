@@ -54,6 +54,11 @@ try {
     $lnk.TargetPath = 'wscript.exe'; $lnk.Arguments = "`"$vbs`""; $lnk.WorkingDirectory = Split-Path $vbs
     $lnk.Description = 'MySQL Forge Studio'; $lnk.Save()
   }
+  # Start the background services (no window) at Windows login so Laragon connections work as soon as the app opens
+  $su = $ws.CreateShortcut((Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\MySQL Forge Studio services.lnk'))
+  $su.TargetPath = 'wscript.exe'; $su.Arguments = "`"$vbs`" --background"; $su.WorkingDirectory = Split-Path $vbs
+  $su.WindowStyle = 7; $su.Description = 'MySQL Forge Studio background services'; $su.Save()
+
   Write-Host "`nDone. Start 'MySQL Forge Studio' from the Desktop or the Start menu." -ForegroundColor Green
   $go = Read-Host 'Launch it now? (Y/n)'
   if ($go -ne 'n') { Start-Process wscript.exe "`"$vbs`"" }

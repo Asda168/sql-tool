@@ -85,6 +85,7 @@ End If
 Set env = sh.Environment("Process")
 env("FORGE_TOKEN") = token
 env("FORGE_UI_PORT") = "4173"
+If WScript.Arguments.Count > 0 Then If LCase(WScript.Arguments(0)) = "--background" Then env("FORGE_IDLE_MINUTES") = "1440"
 
 ' Reuse services that are already running (they keep serving Laragon connections); start only what is missing
 If Not IsUp("http://localhost:4173/app") Then
@@ -104,6 +105,9 @@ If Not IsUp("http://localhost:4173/app") Then
   MsgBox "The interface server did not start. Make sure Node.js is installed.", 16, "MySQL Forge Studio"
   WScript.Quit 1
 End If
+
+' Started at Windows login: keep the services running but do not open a window
+If WScript.Arguments.Count > 0 Then If LCase(WScript.Arguments(0)) = "--background" Then WScript.Quit 0
 
 url = "http://localhost:4173/app?forgeHost=http://127.0.0.1:4174&forgeToken=" & token
 sh.Run """msedge"" --app=""" & url & """ --window-size=1440,900 --user-data-dir=""" & sh.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\MySQLForgeStudio\profile""", 1, False
