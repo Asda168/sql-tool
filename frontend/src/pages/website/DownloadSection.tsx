@@ -4,10 +4,31 @@ import { api, type Release } from '../../lib/api'
 import { PLATFORM_LABEL, detectPlatform, formatBytes, type Platform } from '../../lib/os'
 import { REPO, Section, SectionHead } from './Layout'
 
+const GH_API = 'https://api.github.com/repos/Asda168/sql-tool/releases?per_page=30'
+interface GhAsset { name: string; size: number; browser_download_url: string; digest?: string }
+interface GhRelease { tag_name: string; draft: boolean; published_at: string; body: string | null; assets: GhAsset[] }
+// Installer file names are produced by .github/workflows/release.yml
+const ASSETS: Record<string, Pick<Release, 'platform' | 'architecture' | 'package_type'>> = {
+  'MySQLForgeStudio-Setup-x64.exe': { platform: 'windows', architecture: 'x64', package_type: 'exe' },
+  'MySQLForgeStudio-macOS-universal.dmg': { platform: 'macos', architecture: 'universal', package_type: 'dmg' },
+  'MySQLForgeStudio.AppImage': { platform: 'linux', architecture: 'x64', package_type: 'appimage' },
+  'MySQLForgeStudio.deb': { platform: 'linux', architecture: 'x64', package_type: 'deb' },
+  'MySQLForgeStudio.rpm': { platform: 'linux', architecture: 'x64', package_type: 'rpm' },
+}
+const vparts = (t: string) => t.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
+const byVersionDesc = (a: GhRelease, b: GhRelease) => { const x = vparts(a.tag_name), y = vparts(b.tag_name); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (y[i] ?? 0) - (x[i] ?? 0); return 0 }
+// GitHub release -> the Release shape the page already renders (negative ids mark GitHub-sourced rows: direct download, no tracking call)
+function fromGithub(r: GhRelease, latest: boolean): Release[] {
+  return r.assets.filter((a) => ASSETS[a.name]).map((a, i) => ({
+    id: -(i + 1), version: r.tag_name.replace(/^v/, ''), ...ASSETS[a.name], download_url: a.browser_download_url, file_size: a.size,
+    checksum: a.digest?.replace('sha256:', '') ?? '0', release_notes: r.body ?? '', published_at: r.published_at, is_latest: latest,
+  }))
+}
+
 const PKG: Record<string, string> = { exe: 'Installer (.exe)', portable: 'Portable (.zip)', dmg: 'Disk image (.dmg)', appimage: 'AppImage', deb: '.deb package', rpm: '.rpm package' }
 
 const BLOCKS: { id: Platform; title: string; reqs: string; icon: typeof Monitor; steps: string[] }[] = [
-  { id: 'windows', title: 'MySQL Forge Studio for Windows', reqs: 'Windows 10/11 · x64', icon: Monitor, steps: ['Install Node.js 20+ from nodejs.org (one time).', 'Download the setup file below and double-click it. No administrator rights are needed; run it again any time to update.', 'Launch MySQL Forge Studio from the Desktop or Start menu shortcut, then choose “Connect Database” or “Open Project”.'] },
+  { id: 'windows', title: 'MySQL Forge Studio for Windows', reqs: 'Windows 10/11 · x64', icon: Monitor, steps: ['Download the installer below and double-click it. No administrator rights are needed; run it again any time to update.', 'Windows SmartScreen may warn about an unknown publisher: choose More info → Run anyway.', 'Launch MySQL Forge Studio from the Desktop or Start menu, then choose “Connect Database” or “Open Project”.'] },
   { id: 'macos', title: 'MySQL Forge Studio for macOS', reqs: 'macOS 12+ · Apple silicon & Intel', icon: Apple, steps: ['Open the .dmg and drag the app into Applications.', 'First launch: right-click the app and choose Open (the build is not notarized yet).', 'Choose “Connect Database” or “Open Project”.'] },
   { id: 'linux', title: 'MySQL Forge Studio for Linux', reqs: 'Ubuntu 22.04+, Fedora 38+ · x64 & ARM64', icon: Terminal, steps: ['AppImage: chmod +x the file and run it. Or install the .deb / .rpm.', 'Needs webkit2gtk-4.1 and libsecret (installed by the .deb/.rpm).', 'Choose “Connect Database” or “Open Project”.'] },
 ]
@@ -16,9 +37,20 @@ const FALLBACK_NOTES = ['Five database engines: MySQL, MariaDB, PostgreSQL, SQLi
 
 export function useReleases() {
   const [releases, setReleases] = useState<Release[] | null>(null)
+  const [versions, setVersions] = useState<GhRelease[]>([])
   const [failed, setFailed] = useState(false)
-  useEffect(() => { api.latestReleases().then(setReleases, () => { setFailed(true); setReleases([]) }) }, [])
-  return { releases, failed }
+  useEffect(() => {
+    fetch(GH_API, { headers: { Accept: 'application/vnd.github+json' } })
+      .then((r) => (r.ok ? (r.json() as Promise<GhRelease[]>) : Promise.reject(new Error('github'))))
+      .then((list) => {
+        const vs = list.filter((r) => !r.draft && r.assets.some((a) => ASSETS[a.name])).sort(byVersionDesc)
+        if (!vs.length) throw new Error('no releases')
+        setVersions(vs); setReleases(fromGithub(vs[0], true))
+      })
+      .catch(() => api.latestReleases().then(setReleases, () => { setFailed(true); setReleases([]) })) // fall back to the Django API
+  }, [])
+  const pick = (i: number) => setReleases(fromGithub(versions[i], i === 0))
+  return { releases, failed, versions, pick }
 }
 
 function CopyBtn({ text }: { text: string }) {
@@ -27,7 +59,7 @@ function CopyBtn({ text }: { text: string }) {
 }
 
 export default function DownloadSection({ standalone = false }: { standalone?: boolean }) {
-  const { releases } = useReleases()
+  const { releases, versions, pick } = useReleases()
   const [os, setOs] = useState<Platform | null>(null)
   const [msg, setMsg] = useState('')
   useEffect(() => setOs(detectPlatform()), [])
@@ -39,8 +71,11 @@ export default function DownloadSection({ standalone = false }: { standalone?: b
 
   const download = async (r: Release) => {
     setMsg('')
-    try { const rec = await api.requestDownload(r.platform, r.architecture, r.package_type); window.location.href = rec.download_url } // creates the Download record
-    catch { window.location.href = r.download_url } // never block the download if tracking fails
+    if (r.id < 0) window.location.href = r.download_url // GitHub release asset: download directly
+    else {
+      try { const rec = await api.requestDownload(r.platform, r.architecture, r.package_type); window.location.href = rec.download_url } // creates the Download record
+      catch { window.location.href = r.download_url } // never block the download if tracking fails
+    }
     setMsg(`Starting download of v${r.version} (${PLATFORM_LABEL[r.platform]} ${r.architecture}). After installing, launch the app and choose “Connect Database” or “Open Project”.`)
   }
 
@@ -48,7 +83,7 @@ export default function DownloadSection({ standalone = false }: { standalone?: b
     <Section id={standalone ? undefined : 'download'} className={standalone ? '!pt-32' : ''}>
       <SectionHead eyebrow="Download" title="Download MySQL Forge Studio" sub="Free for Windows, macOS and Linux. Your databases, files and Git stay on your machine." />
       <div className="card mb-8 !p-6">
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1"><h3 className="text-lg font-semibold">Version {version}</h3><span className="text-sm text-muted">{date ? `Released ${date}` : 'First public release'}</span>{os && <span className="rounded-full border border-accent/40 px-2.5 py-0.5 text-xs text-accent">You’re using {PLATFORM_LABEL[os]}</span>}</div>
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1"><h3 className="text-lg font-semibold">Version {version}</h3><span className="text-sm text-muted">{date ? `Released ${date}` : 'First public release'}</span>{versions.length > 1 && <label className="ml-auto flex items-center gap-2 text-sm text-muted">Version<select aria-label="Choose which version to download" className="input !w-auto !py-1" value={versions.findIndex((v) => v.tag_name.replace(/^v/, '') === version)} onChange={(e) => pick(+e.target.value)}>{versions.map((v, i) => <option key={v.tag_name} value={i}>{v.tag_name}{i === 0 ? ' (latest)' : ''}</option>)}</select></label>}{os && <span className="rounded-full border border-accent/40 px-2.5 py-0.5 text-xs text-accent">You’re using {PLATFORM_LABEL[os]}</span>}</div>
         <h4 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-widest text-muted">What’s new in v{version}</h4>
         <ul className="grid gap-x-8 gap-y-1.5 text-sm text-muted sm:grid-cols-2">{(notes.length ? notes : FALLBACK_NOTES).map((n) => <li key={n} className="flex gap-2"><Check size={15} className="mt-0.5 shrink-0 text-mint" />{n}</li>)}</ul>
       </div>
@@ -68,8 +103,8 @@ export default function DownloadSection({ standalone = false }: { standalone?: b
               {mine && <span className="mt-2 w-fit rounded-full bg-accent/15 px-2 py-0.5 text-[11px] text-accent">Recommended for your system</span>}
               <ol className="my-4 list-decimal space-y-1.5 pl-5 text-sm text-muted">{b.steps.map((s) => <li key={s}>{s}</li>)}</ol>
               <div className="mt-auto space-y-2">
-                {b.id === 'windows' && <a className={mine ? 'btn-neon w-full' : 'btn-ghost w-full'} href="/install-forge-studio.cmd" download><DlIcon size={15} />Windows setup (.cmd)</a>}
-                {rs.map((r) => <button key={r.id} className={mine && ['exe', 'dmg', 'appimage'].includes(r.package_type) ? 'btn-neon w-full' : 'btn-ghost w-full justify-between'} onClick={() => download(r)}><span className="inline-flex items-center gap-2"><DlIcon size={15} />{PKG[r.package_type]} · {r.architecture}</span><span className="text-xs opacity-70">{formatBytes(r.file_size)}</span></button>)}
+                {b.id === 'windows' && !rs.some((r) => r.package_type === 'exe') && <a className={mine ? 'btn-neon w-full' : 'btn-ghost w-full'} href="/install-forge-studio.cmd" download><DlIcon size={15} />Windows setup (.cmd)</a>}
+                {rs.map((r) => <button key={r.id} className={mine && ['exe', 'dmg', 'appimage'].includes(r.package_type) ? 'btn-neon w-full' : 'btn-ghost w-full justify-between'} onClick={() => download(r)}><span className="inline-flex items-center gap-2"><DlIcon size={15} />{PKG[r.package_type]} · {r.architecture === 'universal' ? 'Apple silicon + Intel' : r.architecture}</span><span className="text-xs opacity-70">{formatBytes(r.file_size)}</span></button>)}
                 {!rs.length && <button className="btn-ghost w-full" disabled><DlIcon size={15} />Coming soon</button>}
               </div>
             </article>

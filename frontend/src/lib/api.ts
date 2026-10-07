@@ -3,7 +3,7 @@
 export const API_BASE: string = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 
 export interface Release {
-  id: number; version: string; platform: 'windows' | 'macos' | 'linux'; architecture: 'x64' | 'arm64'
+  id: number; version: string; platform: 'windows' | 'macos' | 'linux'; architecture: 'x64' | 'arm64' | 'universal'
   package_type: 'exe' | 'portable' | 'dmg' | 'appimage' | 'deb' | 'rpm'; download_url: string
   file_size: number; checksum: string; release_notes: string; published_at: string; is_latest: boolean
 }

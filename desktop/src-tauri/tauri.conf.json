@@ -11,7 +11,15 @@
   },
   "app": {
     "windows": [
-      { "title": "MySQL Forge Studio", "width": 1440, "height": 900, "minWidth": 960, "minHeight": 600, "center": true, "decorations": false }
+      {
+        "title": "MySQL Forge Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "decorations": false
+      }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost https:"
@@ -19,11 +27,32 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": [],
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "shortDescription": "SQL client, code editor, Git and terminal",
     "windows": {
-      "nsis": { "installMode": "currentUser", "displayLanguageSelector": false }
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    },
+    "publisher": "MySQL Forge Studio",
+    "category": "DeveloperTool",
+    "longDescription": "MySQL Forge Studio is a cross-platform SQL client, code editor, Git client and terminal for MySQL, MariaDB, PostgreSQL, SQLite and SQL Server.",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libsecret-1-0"
+        ]
+      }
     }
   }
 }

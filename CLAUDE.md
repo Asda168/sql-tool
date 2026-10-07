@@ -26,6 +26,9 @@ npm run dev | npm run build
 ```
 Before finishing a change: `npx tsc --noEmit`, `npm test`, `python manage.py test`; for Rust changes `cargo check` in `desktop/src-tauri`.
 
+## Releases
+Tag `vX.Y.Z` (and bump `desktop/src-tauri/tauri.conf.json` + `Cargo.toml` version) and push the tag: `.github/workflows/release.yml` builds Windows NSIS, macOS universal dmg and Linux AppImage/deb/rpm, publishes them to GitHub Releases with stable names (`MySQLForgeStudio-Setup-x64.exe`, `MySQLForgeStudio-macOS-universal.dmg`, `MySQLForgeStudio.{AppImage,deb,rpm}`) and runs install smoke tests. The website download page (`frontend/src/pages/website/DownloadSection.tsx`) reads GitHub Releases for the version picker and falls back to the Django API.
+
 ## Code map
 - `frontend/src/bridge/` `types.ts` (contract), `tauri.ts` (invokes Rust), `demo.ts` (browser fallback: sql.js SQLite + virtual FS/Git/terminal).
 - `frontend/src/lib/` engines registry (quoting, paging, literals per engine), `sqlSafety.ts` (mirrors `backend/database/sqlsafety.py`; keep both in sync), `introspect.ts` (per-engine schema SQL), `codegen.ts` (CREATE TABLE), `exporters.ts`.
